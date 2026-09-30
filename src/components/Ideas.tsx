@@ -118,7 +118,7 @@ export function Ideas() {
                 {boxSizes.map((b) => <Tag.CheckableTag key={b.name} checked={inp.goalQty === b.q} onChange={() => set({ goalQty: b.q })}>{t('fill {box}', { box: t(b.name).toLowerCase() })} ({b.q})</Tag.CheckableTag>)}
               </Space></Space>
           )}
-          {inp.goal === 'freeShipping' && <Typography.Text>{t('Free shipping starts at {q} pcs ({x} TL).', { q: fq, x: tl(fq * product.price) })}</Typography.Text>}
+          {inp.goal === 'freeShipping' && <Typography.Text>{t('Free shipping starts at {q} pcs ({x} TL). Customers 1–2 pieces short are the ones who add more to reach it.', { q: fq, x: tl(fq * product.price) })}</Typography.Text>}
           {inp.goal === 'crossSell' && other && (
             <Space direction="vertical" size={2}><Typography.Text className="tiny">{t('Add-on product')}</Typography.Text>
               <Select value={other.id} onChange={(v) => set({ otherProductId: v })} style={{ width: 200 }} showSearch optionFilterProp="label" options={ps.filter((p) => p.id !== product.id).map((p) => ({ value: p.id, label: p.name }))} /></Space>
@@ -148,6 +148,16 @@ export function Ideas() {
           { value: 'profit', label: t('Most profit on the target order') },
         ]} />}>
         {flash && <Alert type="success" showIcon closable onClose={() => setFlash('')} message={flash} style={{ marginBottom: 12 }} />}
+        {ideas.length > 0 && ideas.every((i) => i.breakEven === null || i.breakEven > 0.5) && (() => {
+          const a = calcWith(settings, { [product.id]: Math.max(1, fq - 1) }, []);
+          const b = calcWith(settings, { [product.id]: fq }, []);
+          return (
+            <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={t('None of these pay off with your customer mix.')}
+              description={inp.goal === 'freeShipping' && fq > 1 && b.profit < a.profit
+                ? t('Reaching free shipping lowers your profit: {a} pcs earn {pa} TL, {b} pcs earn {pb} TL, because the customer stops paying the {fee} TL shipping fee. Every customer you move to free shipping costs you money, so a higher threshold or the "Bigger baskets" goal will do better.', { a: fq - 1, b: fq, pa: tl(a.profit), pb: tl(b.profit), fee: tl(settings.customerShippingFee) })
+                : t('The discount given to customers who would buy anyway costs more than the extra orders bring in. The least bad ones are at the top.')} />
+          );
+        })()}
         <Table size="small" bordered scroll={{ x: 'max-content' }} dataSource={ideas.slice(0, limit).map((i, k) => ({ ...i, key: k }))}
           pagination={false}
           locale={{ emptyText: t('Nothing meets these limits. Lower the minimum margin or the minimum saving.') }}
@@ -158,7 +168,7 @@ export function Ideas() {
             { key: 'ign', title: t('If nobody responds'), align: 'right', render: (_, i) => i.lossIfIgnored > 0.005 ? <Typography.Text type="danger">−{tl(i.lossIfIgnored)} / {t('order')}</Typography.Text> : <Typography.Text type="success">{t('no cost')}</Typography.Text> },
             { key: 'tgt', title: t('Target order'), render: (_, i) => {
               const r = calcWith(settings, i.target, i.campaigns);
-              return <Flex vertical><span>{Object.entries(i.target).map(([id, q]) => `${q} × ${ps.find((p) => p.id === id)?.name}`).join(' + ')}</span><Typography.Text type="secondary" className="tiny">{boxText(r)}</Typography.Text></Flex>;
+              return <Flex vertical><span>{Object.entries(i.target).map(([id, q]) => `${q} × ${ps.find((p) => p.id === id)?.name}`).join(' + ')}</span><Space size={4}><Typography.Text type="secondary" className="tiny">{boxText(r)}</Typography.Text>{r.freeShipping && <Tag color="green" style={{ margin: 0 }}>{t('free shipping')}</Tag>}</Space></Flex>;
             } },
             { key: 'pays', title: t('Customer pays'), align: 'right', render: (_, i) => <Flex vertical align="flex-end"><span>{tl(i.customerPays)}</span><Typography.Text type="secondary" className="tiny">{t('saves {p}', { p: pct(i.saving) })}</Typography.Text></Flex> },
             { key: 'p', title: t('Profit · margin'), align: 'right', render: (_, i) => <Flex vertical align="flex-end"><b>{tl(i.targetProfit)}</b><Typography.Text type="secondary" className="tiny">{pct(i.targetMargin)}</Typography.Text></Flex> },

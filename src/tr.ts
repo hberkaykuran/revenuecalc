@@ -425,4 +425,9 @@ export const tr: Record<string, string> = {
   "No second product": "İkinci ürün yok",
   "Products you already have (same SKU) are kept; only their box size is filled in if it is still 1. Costs start at 0.": "Zaten olan ürünler (aynı SKU) korunur; kutu yeri hâlâ 1 ise yalnızca o güncellenir. Maliyetler 0 olarak başlar.",
   "Shopify invoices from abroad without Turkish VAT, so 0. Only for the separate VAT figure.": "Shopify yurt dışından Türk KDV'si olmadan faturalar, bu yüzden 0. Yalnızca ayrı gösterilen KDV hesabı için.",
+  "Free shipping starts at {q} pcs ({x} TL). Customers 1–2 pieces short are the ones who add more to reach it.": "Ücretsiz kargo {q} adetten başlar ({x} TL). Sınıra 1–2 adet uzak olan müşteriler ulaşmak için ürün ekler.",
+  "None of these pay off with your customer mix.": "Müşteri dağılımınızla bunların hiçbiri kârlı değil.",
+  "Reaching free shipping lowers your profit: {a} pcs earn {pa} TL, {b} pcs earn {pb} TL, because the customer stops paying the {fee} TL shipping fee. Every customer you move to free shipping costs you money, so a higher threshold or the \"Bigger baskets\" goal will do better.": "Ücretsiz kargoya ulaşmak kârınızı düşürüyor: {a} adet {pa} TL, {b} adet {pb} TL kazandırıyor, çünkü müşteri {fee} TL kargo ücretini artık ödemiyor. Ücretsiz kargoya taşıdığınız her müşteri size para kaybettirir; daha yüksek bir alt sınır ya da \"Daha büyük sepetler\" hedefi daha iyi sonuç verir.",
+  "The discount given to customers who would buy anyway costs more than the extra orders bring in. The least bad ones are at the top.": "Zaten alacak olan müşterilere verilen indirim, ek siparişlerin getirdiğinden fazlasına mal oluyor. En az zararlı olanlar en üstte.",
+  "free shipping": "kargo bedava",
 };

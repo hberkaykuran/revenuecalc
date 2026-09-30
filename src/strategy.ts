@@ -28,34 +28,35 @@ export type Idea = {
   targetProfit: number;
   targetMargin: number;
   customerPays: number;
-  saving: number; // fraction saved on the target order
+  saving: number; // fraction the customer saves on the target order, shipping fee included
   breakEven: number | null; // share of customers that must respond; 0 = earns more even if nobody does; null = never
   expectedChange: number; // profit per order vs today at the assumed response
   lossIfIgnored: number; // profit lost per order if nobody responds
 };
 
-type Basket = { p: number; cart: Cart; shifted: Cart | null };
+type Basket = { p: number; q: number; cart: Cart };
 
 const mk = (mechanic: Mechanic, productIds: string[], i: number): Campaign =>
   ({ id: `idea${i}`, name: '', mechanic, productIds, active: true });
 
 function baskets(s: Settings, inp: StrategyInput): Basket[] {
   const total = inp.mix.reduce((a, b) => a + b, 0) || 1;
-  const prod = s.products.find((p) => p.id === inp.productId)!;
-  const threshold = freeShipQty(s, prod.price);
-  return inp.mix.map((share, i) => {
-    const q = i + 1;
-    const cart = { [prod.id]: q };
-    let shifted: Cart | null = null;
-    if (inp.goal === 'basket' && q < inp.goalQty) shifted = { [prod.id]: inp.goalQty };
-    if (inp.goal === 'freeShipping' && q < threshold) shifted = { [prod.id]: threshold };
-    if (inp.goal === 'crossSell' && inp.otherProductId !== prod.id) shifted = { [prod.id]: q, [inp.otherProductId]: 1 };
-    return { p: share / total, cart, shifted };
-  });
+  return inp.mix.map((share, i) => ({ p: share / total, q: i + 1, cart: { [inp.productId]: i + 1 } }));
 }
 
 /** Units of a product needed to reach the store's free-shipping threshold. */
 export const freeShipQty = (s: Settings, price: number) => Math.max(1, Math.ceil(s.freeShippingThreshold / price - 1e-9));
+
+/** How far below the free-shipping order a customer can be and still add units to reach it. */
+export const FREE_SHIPPING_REACH = 2;
+
+/** The order a basket turns into if the customer responds, or null if this goal does not move it. */
+function shiftFor(inp: StrategyInput, b: Basket, targetQty: number): Cart | null {
+  if (inp.goal === 'basket') return b.q < targetQty ? { [inp.productId]: targetQty } : null;
+  if (inp.goal === 'freeShipping') return b.q < targetQty && b.q >= targetQty - FREE_SHIPPING_REACH ? { [inp.productId]: targetQty } : null;
+  if (inp.goal === 'crossSell' && inp.otherProductId !== inp.productId) return { ...b.cart, [inp.otherProductId]: 1 };
+  return null;
+}
 
 function candidates(s: Settings, inp: StrategyInput): Campaign[][] {
   const prod = s.products.find((p) => p.id === inp.productId)!;
@@ -64,7 +65,9 @@ function candidates(s: Settings, inp: StrategyInput): Campaign[][] {
   const out: Campaign[][] = [];
   let i = 0;
   const push = (...cs: [Mechanic, string[]][]) => out.push(cs.map(([m, ids]) => mk(m, ids, i++)));
-  const goalQty = inp.goal === 'freeShipping' ? freeShipQty(s, prod.price) : inp.goalQty;
+  const fq = freeShipQty(s, prod.price);
+  const goalQty = inp.goal === 'freeShipping' ? fq : inp.goalQty;
+  const threshold = s.freeShippingThreshold;
 
   const productSide: [Mechanic, string[]][] = [];
   for (const type of PRODUCT_MECHANICS) {
@@ -81,19 +84,42 @@ function candidates(s: Settings, inp: StrategyInput): Campaign[][] {
     for (let pay = Math.ceil(goalQty / 2); pay < goalQty; pay++) productSide.push([{ type: 'buyXPayY', buy: goalQty, pay }, only]);
     for (const percent of [5, 10, 15, 20]) productSide.push([{ type: 'qtyTiers', tiers: [{ minQty: goalQty, percent }] }, only]);
   }
+  if (inp.goal === 'freeShipping' && threshold > 0) {
+    // a small reward at the free-shipping order that keeps it at or above the threshold
+    const room = 1 - threshold / (fq * prod.price);
+    for (const percent of [1, 2, 3, 4, 5, 7].filter((x) => x / 100 <= room + 1e-9)) productSide.push([{ type: 'percentOff', percent, minQty: fq }, only]);
+    const prices = new Set([threshold, Math.round(((threshold + fq * prod.price) / 2) / 10) * 10 - 0.1].filter((x) => x >= threshold && x < fq * prod.price));
+    for (const price of prices) productSide.push([{ type: 'bundlePrice', qty: fq, price }, only]);
+  }
   const cartSide: [Mechanic, string[]][] = [];
   for (const type of ['cartPercent', 'cartAmount', 'freeShipping'] as const) for (const m of presets(type)) cartSide.push([m, []]);
-  // thresholds placed just under the target order, so reaching the goal unlocks them
-  const targetValue = inp.goal === 'crossSell' && other ? prod.price + other.price : prod.price * goalQty;
-  const near = Math.floor((targetValue * 0.97) / 50) * 50;
-  if (near > 0) {
-    cartSide.push([{ type: 'freeShipping', minAmount: near }, []]);
-    for (const percent of [5, 10]) cartSide.push([{ type: 'cartPercent', percent, minAmount: near }, []]);
-    for (const amount of [50, 75, 100]) cartSide.push([{ type: 'cartAmount', amount, minAmount: near }, []]);
+  if (inp.goal === 'freeShipping') {
+    // bring free shipping closer: from 2, 3 … pieces instead of the store's threshold
+    for (let q = 2; q < fq; q++) cartSide.push([{ type: 'freeShipping', minAmount: Math.floor((q * prod.price) / 10) * 10 }, []]);
+  } else {
+    // thresholds placed just under the target order, so reaching the goal unlocks them
+    const targetValue = inp.goal === 'crossSell' && other ? prod.price + other.price : prod.price * goalQty;
+    const near = Math.floor((targetValue * 0.97) / 50) * 50;
+    if (near > 0) {
+      cartSide.push([{ type: 'freeShipping', minAmount: near }, []]);
+      for (const percent of [5, 10]) cartSide.push([{ type: 'cartPercent', percent, minAmount: near }, []]);
+      for (const amount of [50, 75, 100]) cartSide.push([{ type: 'cartAmount', amount, minAmount: near }, []]);
+    }
   }
   if (inp.goal === 'crossSell' && other) {
-    for (const type of ['percentOff', 'amountOff', 'fixedPrice'] as const)
-      for (const m of presets(type, other.price)) productSide.push([m, [other.id]]);
+    // only rewards the pair unlocks: a discount on the add-on alone would also go to everyone
+    // who already buys it, and those orders are not in this model
+    const pair = prod.price + other.price;
+    const cart: [Mechanic, string[]][] = [];
+    for (const f of [0.97, 0.9]) {
+      const min = Math.floor((pair * f) / 10) * 10;
+      if (min <= prod.price) continue;
+      cart.push([{ type: 'freeShipping', minAmount: min }, []]);
+      for (const percent of [5, 10, 15]) cart.push([{ type: 'cartPercent', percent, minAmount: min }, []]);
+      for (const amount of [25, 50, 75, 100]) cart.push([{ type: 'cartAmount', amount, minAmount: min }, []]);
+    }
+    for (const c of cart) push(c);
+    return out;
   }
 
   for (const p of productSide) push(p);
@@ -108,23 +134,35 @@ export function strategyIdeas(s: Settings, inp: StrategyInput): Idea[] {
   const bs = baskets(s, inp);
   const profit = (cart: Cart, cs: Campaign[]) => calcWith(s, cart, cs).profit;
   const today = bs.reduce((e, b) => e + b.p * profit(b.cart, []), 0);
-  const goalQty = inp.goal === 'freeShipping' ? freeShipQty(s, prod.price) : inp.goalQty;
-  const target: Cart = inp.goal === 'crossSell' ? { [prod.id]: 1, [inp.otherProductId]: 1 }
-    : inp.goal === 'conversion' ? { [prod.id]: 1 } : { [prod.id]: goalQty };
+  const fq = freeShipQty(s, prod.price);
 
   const seen = new Set<string>();
   const ideas: Idea[] = [];
   for (const cs of candidates(s, inp)) {
+    // the order this campaign aims at
+    let targetQty = inp.goal === 'basket' ? inp.goalQty : 1;
+    if (inp.goal === 'freeShipping') {
+      // the smallest order that ships free with this campaign; it must not be further away than today
+      let q = 1;
+      while (q <= fq && !calcWith(s, { [prod.id]: q }, cs).freeShipping) q++;
+      if (q > fq) continue;
+      targetQty = q;
+    }
+    const target: Cart = inp.goal === 'crossSell' ? { [prod.id]: 1, [inp.otherProductId]: 1 } : { [prod.id]: targetQty };
     const t = calcWith(s, target, cs);
-    const saving = t.list > 0 ? 1 - t.productRevenue / t.list : 0;
-    const shippingSaved = !calcWith(s, target, []).freeShipping && t.freeShipping;
-    if ((saving * 100 < inp.minSaving - 1e-9 && !shippingSaved) || saving * 100 > inp.maxSaving + 1e-9) continue;
+    const before = calcWith(s, target, []);
+    // what the customer saves on this order against today's price, shipping fee included
+    const saving = before.customerPays > 0 ? 1 - t.customerPays / before.customerPays : 0;
+    if (saving * 100 < inp.minSaving - 1e-9 || saving * 100 > inp.maxSaving + 1e-9) continue;
     if (t.margin * 100 < inp.minMargin - 1e-9) continue;
     // a campaign that does nothing to the target order is not an idea for this goal
     if (t.applied.length < cs.length) continue;
     const ignored = bs.reduce((e, b) => e + b.p * profit(b.cart, cs), 0); // nobody changes behaviour
     let gain = 0;
-    for (const b of bs) if (b.shifted) gain += b.p * (profit(b.shifted, cs) - profit(b.cart, cs));
+    for (const b of bs) {
+      const to = shiftFor(inp, b, targetQty);
+      if (to) gain += b.p * (profit(to, cs) - profit(b.cart, cs));
+    }
     let breakEven: number | null;
     if (inp.goal === 'conversion') {
       // extra orders needed to make up the lower profit per order
@@ -134,7 +172,7 @@ export function strategyIdeas(s: Settings, inp: StrategyInput): Idea[] {
     }
     const r = inp.response / 100;
     const expected = inp.goal === 'conversion' ? ignored * (1 + r) - today : ignored + r * gain - today;
-    const key = `${t.profit.toFixed(2)}|${ignored.toFixed(2)}|${gain.toFixed(2)}`;
+    const key = `${targetQty}|${t.profit.toFixed(2)}|${ignored.toFixed(2)}|${gain.toFixed(2)}`;
     if (seen.has(key)) continue;
     seen.add(key);
     ideas.push({
