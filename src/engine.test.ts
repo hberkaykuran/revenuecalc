@@ -104,6 +104,33 @@ describe('VAT treatment', () => {
   });
 });
 
+describe('mix & match and piece counts', () => {
+  const two: Settings = { ...s0, products: [...s0.products, { id: 'C', name: 'C', cost: 50, price: 149.9, vatRate: 1, sizeUnits: 1 }] };
+  const mix = camp({ type: 'mixBuyXPayY', buy: 6, pay: 5 }, ['A', 'C']);
+  it('counts pieces across products and frees the cheapest', () => {
+    const r = calcWith(two, { A: 3, C: 3 }, [mix]);
+    expect(r.cartDiscount).toBeCloseTo(134.9);
+    expect(r.applied.map((c) => c.id)).toEqual([mix.id]);
+    expect(calcWith(two, { A: 3, C: 2 }, [mix]).cartDiscount).toBe(0);
+    expect(calcWith(two, { A: 6, C: 6 }, [mix]).cartDiscount).toBeCloseTo(2 * 134.9);
+  });
+  it('ignores products outside its list', () => {
+    expect(calcWith(two, { A: 5, B: 1 }, [mix]).cartDiscount).toBe(0);
+  });
+  it('free shipping from a number of pieces, not an amount', () => {
+    const fs6 = camp({ type: 'freeShipping', minAmount: 0, minItems: 6 });
+    const r = calcWith(two, { A: 3, C: 3 }, [mix, fs6]);
+    expect(r.productRevenue).toBeCloseTo(3 * 134.9 + 3 * 149.9 - 134.9);
+    expect(r.shippingCharged).toBe(0);
+    expect(calcWith(two, { A: 5 }, [fs6]).shippingCharged).toBe(100); // 674.50, 5 pcs: still pays
+  });
+  it('cart discount from a number of pieces', () => {
+    const p20 = camp({ type: 'cartPercent', percent: 20, minAmount: 0, minItems: 6 });
+    expect(calcWith(two, { A: 5 }, [p20]).cartDiscount).toBe(0);
+    expect(calcWith(two, { A: 6 }, [p20]).cartDiscount).toBeCloseTo(6 * 134.9 * 0.2);
+  });
+});
+
 describe('combination rules', () => {
   const a10 = camp({ type: 'percentOff', percent: 10, minQty: 0 }, ['A']);
   const a4p3 = camp({ type: 'buyXPayY', buy: 4, pay: 3 }, ['A']);

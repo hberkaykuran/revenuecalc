@@ -18,6 +18,9 @@ A campaign is one mechanic with its own numbers, picked from presets or set by h
 |---|---|
 | % off each unit, TL off each unit, new unit price (each optionally from a quantity) | % off the cart over an amount |
 | Buy X pay Y, X pieces for a price, every Nth unit off, quantity tiers | TL off the cart over an amount, cart tiers, free shipping over an amount |
+| | Mix & match buy X pay Y: any X pieces of the chosen products, the cheapest free |
+
+Cart discounts and free shipping can require an amount, a number of pieces, or both ("free shipping from 6 pieces").
 
 Any number of campaigns can be on. **Combination rules** decide which may apply to the same order. By default:
 - free shipping stacks with everything

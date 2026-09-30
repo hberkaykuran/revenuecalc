@@ -14,12 +14,22 @@ export function presets(type: MechanicType, price = 100): Mechanic[] {
     case 'qtyTiers': return [
       [[3, 10]], [[6, 15]], [[3, 10], [6, 15]], [[2, 5], [3, 10], [6, 15]], [[3, 10], [6, 15], [12, 20]],
     ].map((tiers) => ({ type, tiers: tiers.map(([minQty, percent]) => ({ minQty, percent })) }));
-    case 'cartPercent': return [[5, 750], [10, 1000], [15, 1500], [10, 750]].map(([percent, minAmount]) => ({ type, percent, minAmount }));
-    case 'cartAmount': return [[50, 500], [75, 750], [100, 1000], [150, 1500], [250, 2000]].map(([amount, minAmount]) => ({ type, amount, minAmount }));
+    case 'mixBuyXPayY': return [[3, 2], [4, 3], [6, 5], [6, 4], [12, 10], [12, 9]].map(([buy, pay]) => ({ type, buy, pay }));
+    case 'cartPercent': return [
+      ...[[5, 750], [10, 1000], [15, 1500]].map(([percent, minAmount]) => ({ type, percent, minAmount })),
+      ...[[10, 3], [15, 6], [20, 6], [25, 12]].map(([percent, minItems]) => ({ type, percent, minAmount: 0, minItems })),
+    ];
+    case 'cartAmount': return [
+      ...[[50, 500], [100, 1000], [150, 1500]].map(([amount, minAmount]) => ({ type, amount, minAmount })),
+      ...[[50, 3], [100, 6], [250, 12]].map(([amount, minItems]) => ({ type, amount, minAmount: 0, minItems })),
+    ];
     case 'cartTiers': return [
       { type, mode: 'amount', tiers: [{ minAmount: 750, value: 50 }, { minAmount: 1000, value: 100 }, { minAmount: 1500, value: 200 }] },
       { type, mode: 'percent', tiers: [{ minAmount: 750, value: 5 }, { minAmount: 1000, value: 10 }, { minAmount: 1500, value: 15 }] },
     ];
-    case 'freeShipping': return [0, 300, 400, 500, 600].map((minAmount) => ({ type, minAmount }));
+    case 'freeShipping': return [
+      ...[0, 400, 500, 600].map((minAmount) => ({ type, minAmount })),
+      ...[3, 4, 6].map((minItems) => ({ type, minAmount: 0, minItems })),
+    ];
   }
 }

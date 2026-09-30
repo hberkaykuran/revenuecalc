@@ -95,8 +95,17 @@ function candidates(s: Settings, inp: StrategyInput): Campaign[][] {
   for (const type of ['cartPercent', 'cartAmount', 'freeShipping'] as const) for (const m of presets(type)) cartSide.push([m, []]);
   if (inp.goal === 'freeShipping') {
     // bring free shipping closer: from 2, 3 … pieces instead of the store's threshold
-    for (let q = 2; q < fq; q++) cartSide.push([{ type: 'freeShipping', minAmount: Math.floor((q * prod.price) / 10) * 10 }, []]);
+    for (let q = 2; q < fq; q++) {
+      cartSide.push([{ type: 'freeShipping', minAmount: Math.floor((q * prod.price) / 10) * 10 }, []]);
+      cartSide.push([{ type: 'freeShipping', minAmount: 0, minItems: q }, []]);
+    }
   } else {
+    if (inp.goal === 'basket' && goalQty > 1) {
+      // rewards by piece count, across flavours: free shipping, mix & match, a cart discount
+      cartSide.push([{ type: 'freeShipping', minAmount: 0, minItems: goalQty }, []]);
+      for (let pay = Math.ceil(goalQty * 0.6); pay < goalQty; pay++) cartSide.push([{ type: 'mixBuyXPayY', buy: goalQty, pay }, only]);
+      for (const percent of [10, 15, 20, 25]) cartSide.push([{ type: 'cartPercent', percent, minAmount: 0, minItems: goalQty }, []]);
+    }
     // thresholds placed just under the target order, so reaching the goal unlocks them
     const targetValue = inp.goal === 'crossSell' && other ? prod.price + other.price : prod.price * goalQty;
     const near = Math.floor((targetValue * 0.97) / 50) * 50;
@@ -122,9 +131,14 @@ function candidates(s: Settings, inp: StrategyInput): Campaign[][] {
     return out;
   }
 
-  for (const p of productSide) push(p);
   for (const c of cartSide) push(c);
-  if (inp.combos) for (const p of productSide) for (const c of cartSide) push(p, c);
+  for (const p of productSide) push(p);
+  if (inp.combos) {
+    // a cart reward plus free shipping first: the mix & match form of an offer beats its single-product twin
+    const ship = cartSide.filter(([m]) => m.type === 'freeShipping');
+    for (const c of cartSide) if (c[0].type !== 'freeShipping') for (const f of ship) push(c, f);
+    for (const p of productSide) for (const c of cartSide) push(p, c);
+  }
   return out;
 }
 
@@ -152,6 +166,8 @@ export function strategyIdeas(s: Settings, inp: StrategyInput): Idea[] {
     const t = calcWith(s, target, cs);
     const before = calcWith(s, target, []);
     // what the customer saves on this order against today's price, shipping fee included
+    // never take away free shipping the order already had: the customer would pay shipping for a "discount"
+    if (before.freeShipping && !t.freeShipping) continue;
     const saving = before.customerPays > 0 ? 1 - t.customerPays / before.customerPays : 0;
     if (saving * 100 < inp.minSaving - 1e-9 || saving * 100 > inp.maxSaving + 1e-9) continue;
     if (t.margin * 100 < inp.minMargin - 1e-9) continue;

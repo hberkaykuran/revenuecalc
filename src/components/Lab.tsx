@@ -2,7 +2,7 @@ import { PlusOutlined } from '@ant-design/icons';
 import { Button, Checkbox, Flex, Input, Select, Space, Switch, Table, Tooltip, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 import { useApp } from '../context';
-import { calcOrder, calcWith, CART_MECHANICS, defaultMechanic, isCart, PARAMS, PRODUCT_MECHANICS, type OrderResult } from '../engine';
+import { calcOrder, calcWith, CART_MECHANICS, defaultMechanic, hasScope, isCart, PARAMS, PRODUCT_MECHANICS, type OrderResult } from '../engine';
 import { pct, t, tl, uid } from '../i18n';
 import { mechanicLabel, TYPE_LABELS } from '../labels';
 import type { Campaign, Mechanic, MechanicType } from '../types';
@@ -76,7 +76,7 @@ function Sweep() {
   }, [from, to, step]);
 
   if (!product) return null;
-  const scope = isCart(type) ? [] : [product.id];
+  const scope = hasScope(type) ? [product.id] : [];
   const cartOf = (q: number) => ({ [product.id]: q });
   const active = state.campaigns.filter((c) => c.active);
   const run = (cs: Campaign[], q: number) => withActive ? calcOrder(settings, cartOf(q), [...active, ...cs], state.stack) : calcWith(settings, cartOf(q), cs);

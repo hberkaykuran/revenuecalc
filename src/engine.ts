@@ -5,10 +5,12 @@ const EPS = 1e-9;
 // ---------- mechanics ----------
 
 export const PRODUCT_MECHANICS: MechanicType[] = ['percentOff', 'amountOff', 'fixedPrice', 'buyXPayY', 'bundlePrice', 'nthOff', 'qtyTiers'];
-export const CART_MECHANICS: MechanicType[] = ['cartPercent', 'cartAmount', 'cartTiers', 'freeShipping'];
+export const CART_MECHANICS: MechanicType[] = ['mixBuyXPayY', 'cartPercent', 'cartAmount', 'cartTiers', 'freeShipping'];
 const UNIT_MECHANICS: MechanicType[] = ['percentOff', 'amountOff', 'fixedPrice'];
 
 export const isCart = (m: Mechanic | MechanicType) => CART_MECHANICS.includes(typeof m === 'string' ? m : m.type);
+/** Mechanics that are limited to chosen products (product campaigns, and mix & match). */
+export const hasScope = (m: Mechanic | MechanicType) => { const t = typeof m === 'string' ? m : m.type; return !isCart(t) || t === 'mixBuyXPayY'; };
 
 export type ParamSpec = { key: string; label: string; unit: '%' | 'TL' | 'pcs'; min: number; step: number };
 
@@ -21,10 +23,11 @@ export const PARAMS: Record<MechanicType, ParamSpec[]> = {
   bundlePrice: [{ key: 'qty', label: 'Pieces', unit: 'pcs', min: 1, step: 1 }, { key: 'price', label: 'Bundle price', unit: 'TL', min: 0, step: 10 }],
   nthOff: [{ key: 'n', label: 'Every Nth unit', unit: 'pcs', min: 1, step: 1 }, { key: 'percent', label: 'Discount', unit: '%', min: 0, step: 5 }],
   qtyTiers: [],
-  cartPercent: [{ key: 'percent', label: 'Discount', unit: '%', min: 0, step: 1 }, { key: 'minAmount', label: 'Cart over', unit: 'TL', min: 0, step: 50 }],
-  cartAmount: [{ key: 'amount', label: 'Discount', unit: 'TL', min: 0, step: 10 }, { key: 'minAmount', label: 'Cart over', unit: 'TL', min: 0, step: 50 }],
+  mixBuyXPayY: [{ key: 'buy', label: 'Buy any', unit: 'pcs', min: 1, step: 1 }, { key: 'pay', label: 'Pay', unit: 'pcs', min: 0, step: 1 }],
+  cartPercent: [{ key: 'percent', label: 'Discount', unit: '%', min: 0, step: 1 }, { key: 'minAmount', label: 'Cart over', unit: 'TL', min: 0, step: 50 }, { key: 'minItems', label: 'From pieces', unit: 'pcs', min: 0, step: 1 }],
+  cartAmount: [{ key: 'amount', label: 'Discount', unit: 'TL', min: 0, step: 10 }, { key: 'minAmount', label: 'Cart over', unit: 'TL', min: 0, step: 50 }, { key: 'minItems', label: 'From pieces', unit: 'pcs', min: 0, step: 1 }],
   cartTiers: [],
-  freeShipping: [{ key: 'minAmount', label: 'Cart over', unit: 'TL', min: 0, step: 50 }],
+  freeShipping: [{ key: 'minAmount', label: 'Cart over', unit: 'TL', min: 0, step: 50 }, { key: 'minItems', label: 'From pieces', unit: 'pcs', min: 0, step: 1 }],
 };
 
 /** A sensible starting mechanic of a type, sized to the product's price. */
@@ -37,6 +40,7 @@ export function defaultMechanic(type: MechanicType, price = 100): Mechanic {
     case 'bundlePrice': return { type, qty: 3, price: shelfPrice(price * 3 * 0.88) };
     case 'nthOff': return { type, n: 2, percent: 50 };
     case 'qtyTiers': return { type, tiers: [{ minQty: 3, percent: 10 }, { minQty: 6, percent: 15 }] };
+    case 'mixBuyXPayY': return { type, buy: 6, pay: 5 };
     case 'cartPercent': return { type, percent: 10, minAmount: 1000 };
     case 'cartAmount': return { type, amount: 100, minAmount: 1000 };
     case 'cartTiers': return { type, mode: 'amount', tiers: [{ minAmount: 750, value: 50 }, { minAmount: 1000, value: 100 }] };
@@ -224,12 +228,24 @@ export function calcWith(settings: Settings, cart: Cart, cs: Campaign[]): OrderR
   const list = lines.reduce((s, l) => s + l.list, 0);
   const subtotal = lines.reduce((s, l) => s + l.afterCampaign, 0);
 
+  const reach = (minAmount: number, minItems?: number) => subtotal + EPS >= minAmount && qty >= (minItems ?? 0);
   let cartDiscount = 0;
   for (const c of cs) {
     const m = c.mechanic;
     let d = 0;
-    if (m.type === 'cartPercent' && subtotal + EPS >= m.minAmount) d = subtotal * m.percent / 100;
-    if (m.type === 'cartAmount' && subtotal + EPS >= m.minAmount) d = m.amount;
+    if (m.type === 'cartPercent' && reach(m.minAmount, m.minItems)) d = subtotal * m.percent / 100;
+    if (m.type === 'cartAmount' && reach(m.minAmount, m.minItems)) d = m.amount;
+    if (m.type === 'mixBuyXPayY' && m.buy > 0 && m.pay >= 0 && m.pay < m.buy) {
+      // every piece of the chosen products at its price after product campaigns; the cheapest go free
+      const units: number[] = [];
+      for (const l of lines) {
+        const p = settings.products.find((x) => x.id === l.productId)!;
+        if (covers(c, p)) for (let k = 0; k < l.qty; k++) units.push(l.afterCampaign / l.qty);
+      }
+      units.sort((a, b) => a - b);
+      const free = Math.floor(units.length / m.buy) * (m.buy - m.pay);
+      d = units.slice(0, free).reduce((a, b) => a + b, 0);
+    }
     if (m.type === 'cartTiers') {
       const t = [...m.tiers].sort((a, b) => b.minAmount - a.minAmount).find((x) => subtotal + EPS >= x.minAmount);
       if (t) d = m.mode === 'percent' ? subtotal * t.value / 100 : t.value;
@@ -243,7 +259,7 @@ export function calcWith(settings: Settings, cart: Cart, cs: Campaign[]): OrderR
   const storeFree = productRevenue + EPS >= settings.freeShippingThreshold;
   let freeShipping = storeFree;
   for (const c of cs) {
-    if (c.mechanic.type === 'freeShipping' && qty > 0 && productRevenue + EPS >= c.mechanic.minAmount) {
+    if (c.mechanic.type === 'freeShipping' && qty > 0 && productRevenue + EPS >= c.mechanic.minAmount && qty >= (c.mechanic.minItems ?? 0)) {
       freeShipping = true;
       if (!storeFree) touched.add(c.id);
     }

@@ -80,10 +80,11 @@ export type Mechanic =
   | { type: 'bundlePrice'; qty: number; price: number } // X pcs for P TL
   | { type: 'nthOff'; n: number; percent: number } // every Nth unit X% off
   | { type: 'qtyTiers'; tiers: { minQty: number; percent: number }[] }
-  | { type: 'cartPercent'; percent: number; minAmount: number }
-  | { type: 'cartAmount'; amount: number; minAmount: number }
+  | { type: 'cartPercent'; percent: number; minAmount: number; minItems?: number }
+  | { type: 'cartAmount'; amount: number; minAmount: number; minItems?: number }
+  | { type: 'mixBuyXPayY'; buy: number; pay: number } // any X pieces of the chosen products, the cheapest are free
   | { type: 'cartTiers'; mode: 'percent' | 'amount'; tiers: { minAmount: number; value: number }[] }
-  | { type: 'freeShipping'; minAmount: number };
+  | { type: 'freeShipping'; minAmount: number; minItems?: number };
 
 export type MechanicType = Mechanic['type'];
 

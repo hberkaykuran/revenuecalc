@@ -1,6 +1,6 @@
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { Button, Flex, Select, Space, Tag, Typography } from 'antd';
-import { CART_MECHANICS, defaultMechanic, isCart, PARAMS, PRODUCT_MECHANICS } from '../engine';
+import { CART_MECHANICS, defaultMechanic, hasScope, PARAMS, PRODUCT_MECHANICS } from '../engine';
 import { t } from '../i18n';
 import { mechanicLabel, TYPE_LABELS } from '../labels';
 import { presets } from '../presets';
@@ -23,7 +23,7 @@ export function MechanicEditor({ idPrefix, mechanic: m, productIds, products, on
   const scoped = products.filter((p) => !productIds.length || productIds.includes(p.id));
   const refPrice = scoped[0]?.price ?? products[0]?.price ?? 100;
   const set = (next: Mechanic) => onChange(next, productIds);
-  const setType = (type: MechanicType) => onChange(defaultMechanic(type, refPrice), isCart(type) ? [] : productIds);
+  const setType = (type: MechanicType) => onChange(defaultMechanic(type, refPrice), hasScope(type) ? productIds : []);
   const label = (s: string) => <Typography.Text type="secondary" className="mini-label">{s}</Typography.Text>;
 
   return (
@@ -50,7 +50,7 @@ export function MechanicEditor({ idPrefix, mechanic: m, productIds, products, on
           {PARAMS[m.type].map((p) => (
             <Space key={p.key} direction="vertical" size={0}>
               <Typography.Text className="tiny">{t(p.label)}</Typography.Text>
-              <Num id={`${idPrefix}-${p.key}`} value={(m as unknown as Record<string, number>)[p.key]} min={p.min} step={p.step} suffix={unit(p.unit)} width={118}
+              <Num id={`${idPrefix}-${p.key}`} value={(m as unknown as Record<string, number>)[p.key] ?? 0} min={p.min} step={p.step} suffix={unit(p.unit)} width={118}
                 onChange={(v) => set({ ...m, [p.key]: v } as Mechanic)} />
             </Space>
           ))}
@@ -86,13 +86,13 @@ export function MechanicEditor({ idPrefix, mechanic: m, productIds, products, on
           )}
         </Flex>
       </div>
-      {!isCart(m) && (
+      {hasScope(m) && (
         <div>
           {label(t('Applies to'))}
           <Select id={`${idPrefix}-scope`} mode="multiple" allowClear value={productIds} placeholder={t('All products')} style={{ width: '100%' }}
             onChange={(ids: string[]) => onChange(m, ids.length === products.length ? [] : ids)}
             options={products.map((p) => ({ value: p.id, label: p.name }))} />
-          <Typography.Text type="secondary" className="tiny">{t('Runs on each selected product separately.')}</Typography.Text>
+          <Typography.Text type="secondary" className="tiny">{m.type === 'mixBuyXPayY' ? t('Pieces of all selected products count together; the cheapest ones are free.') : t('Runs on each selected product separately.')}</Typography.Text>
         </div>
       )}
     </Flex>

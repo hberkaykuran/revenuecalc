@@ -40,3 +40,15 @@ describe('cross-sell ideas', () => {
     }
   });
 });
+
+describe('basket ideas for 6 pieces', () => {
+  const ideas = strategyIdeas(s, { ...inp, goal: 'basket', goalQty: 6, minMargin: 20, minSaving: 10, maxSaving: 40 });
+  it('never take away free shipping the order had', () => {
+    for (const i of ideas) expect(calcWith(s, i.target, i.campaigns).freeShipping).toBe(true);
+  });
+  it('include mix & match with free shipping by piece count', () => {
+    const hit = ideas.find((i) => i.campaigns.length === 2 && i.campaigns.some((c) => c.mechanic.type === 'mixBuyXPayY' && c.mechanic.buy === 6 && c.mechanic.pay === 5)
+      && i.campaigns.some((c) => c.mechanic.type === 'freeShipping' && c.mechanic.minItems === 6));
+    expect(hit?.breakEven).toBeCloseTo(0.05, 2);
+  });
+});
