@@ -65,8 +65,8 @@ export function CampaignSidebar({ onHide }: { onHide?: () => void }) {
             </List.Item>
           )} />
       </Card>
-      <Combinations active={active} />
       <Scenarios />
+      <Combinations active={active} />
     </Flex>
   );
 }
@@ -132,7 +132,7 @@ function Scenarios() {
         <Input id="scenario-name" placeholder={t('Name for the campaigns that are on')} value={name} onChange={(e) => setName(e.target.value)} onPressEnter={save} />
         <Button type="primary" disabled={!active.length} onClick={save}>{t('Save')}</Button>
       </Space.Compact>
-      <List size="small" dataSource={state.scenarios} locale={{ emptyText: t('Save the campaigns that are on to compare them later on the Results tab.') }}
+      <List size="small" dataSource={state.scenarios} locale={{ emptyText: t('Save the campaigns that are on as a combination, then compare combinations in the Compare tab.') }}
         renderItem={(sc) => (
           <List.Item actions={[
             <Button key="l" size="small" type="link" onClick={() => setState((s) => {

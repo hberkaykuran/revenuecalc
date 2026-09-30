@@ -93,7 +93,7 @@ function MarginSummary() {
 }
 
 type Row = { key: number; q: number; r: OrderResult; delta: number; boxChange: boolean; base?: OrderResult };
-type Col = { id: string; title: string; render: (row: Row) => React.ReactNode };
+type Col = { id: string; title: string; hint?: string; render: (row: Row) => React.ReactNode };
 type Group = { id: string; title: string; summary: string; cols: Col[] };
 
 function QuantityTable() {
@@ -133,7 +133,7 @@ function QuantityTable() {
       ) },
       { id: 'margin', title: t('Margin'), render: (x) => <Typography.Text strong>{pct(x.r.margin)}</Typography.Text> },
       { id: 'perUnit', title: t('Per unit'), render: (x) => tl(x.r.profit / x.q) },
-      { id: 'delta', title: t('+1 unit'), render: (x) => <Typography.Text type={x.delta < 0 ? 'danger' : 'success'}>{x.delta >= 0 ? '+' : '−'}{tl(Math.abs(x.delta))}</Typography.Text> },
+      { id: 'delta', title: t('Change vs. one piece fewer'), hint: t('How much more (or less) profit this order makes than the same order with one piece fewer. Red means the extra piece lowers profit, for example when it reaches free shipping or needs a bigger box.'), render: (x) => <Typography.Text type={x.delta < 0 ? 'danger' : 'success'}>{x.delta >= 0 ? '+' : '−'}{tl(Math.abs(x.delta))}</Typography.Text> },
     ] },
     { id: 'revenue', title: t('Revenue'), summary: 'pays', cols: [
       { id: 'list', title: t('List price'), render: (x) => tl(x.r.list) },
@@ -192,7 +192,7 @@ function QuantityTable() {
         title: g.cols.length > 1 ? (
           <Button type="text" size="small" icon={expanded ? <MinusSquareOutlined /> : <PlusSquareOutlined />} onClick={() => toggleGroup(g.id)}>{g.title}</Button>
         ) : g.title,
-        children: cols.map((c): ColumnType<Row> => ({ key: c.id, title: c.title, align: c.id === 'box' || c.id === 'applied' ? 'left' : 'right', render: (_, row) => c.render(row) })),
+        children: cols.map((c): ColumnType<Row> => ({ key: c.id, title: c.hint ? <Tooltip title={c.hint}><span className="dotted">{c.title}</span></Tooltip> : c.title, align: c.id === 'box' || c.id === 'applied' ? 'left' : 'right', render: (_, row) => c.render(row) })),
       };
     }).filter(Boolean) as ColumnsType<Row>,
   ];
@@ -210,7 +210,7 @@ function QuantityTable() {
 
   return (
     <Section id="byqty" title={t('By quantity')}
-      sub={t('Every order size for one product. Click a column group to expand or shrink it. Rows where one more unit lowers profit are marked red.')}
+      sub={t('Every order size for one product. Click a column group to expand or shrink it. Red rows earn less than the same order with one piece fewer.')}
       extra={
         <Space wrap>
           <Select size="small" value={product.id} onChange={(v: string) => setProductId(v)} style={{ width: 170 }} showSearch optionFilterProp="label" options={products.map((p) => ({ value: p.id, label: p.name }))} />
