@@ -3,7 +3,7 @@ import { calcOrder, lineTotal, packBoxes, tariffPrice } from './engine';
 import { defaultState } from './defaults';
 import type { Scenario, Settings } from './types';
 
-const s0: Settings = { ...defaultState.settings, ephRate: 0, deductVat: false };
+const s0: Settings = { ...defaultState.settings, ephRate: 0, deductVat: false, boxes: defaultState.settings.boxes.map((b) => ({ ...b, packagingCost: 0 })) };
 const lookup = defaultState;
 const scen = (a: string | null, b: string | null, cart: string | null = null): Scenario =>
   ({ id: 'x', name: 'x', productCampaigns: { A: a, B: b }, cartCampaignId: cart });
@@ -35,7 +35,9 @@ describe('tariff', () => {
 });
 
 describe('campaigns', () => {
-  const [b4p3, , p10, , f30, fx99, x3] = defaultState.productCampaigns;
+  const byId = (id: string) => defaultState.productCampaigns.find((c) => c.id === id)!;
+  const [b4p3, p10, f30, fx99] = ['b4p3', 'p10', 'f30', 'A-fx99.9'].map(byId);
+  const x3 = { ...byId('A-3for349.9'), bundle: { type: 'xForPrice' as const, qty: 3, price: 350 } };
   it('buy X pay Y', () => {
     expect(lineTotal(4, 100, b4p3)).toBe(300);
     expect(lineTotal(9, 100, b4p3)).toBe(700);
@@ -43,7 +45,7 @@ describe('campaigns', () => {
   it('unit discounts', () => {
     expect(lineTotal(2, 100, p10)).toBe(180);
     expect(lineTotal(2, 100, f30)).toBe(140);
-    expect(lineTotal(2, 134.9, fx99)).toBe(198);
+    expect(lineTotal(2, 134.9, fx99)).toBeCloseTo(199.8);
   });
   it('X for fixed price', () => {
     expect(lineTotal(4, 134.9, x3)).toBeCloseTo(484.9);
@@ -83,5 +85,31 @@ describe('orders', () => {
     const inp = 55 / 6 + 88 * 0.2 + (134.9 * 0.047) / 6;
     expect(r.vatPayable).toBeCloseTo(out - inp);
     expect(r.profit).toBeCloseTo(r.cashProfit - (out - inp));
+  });
+});
+
+describe('new campaign types', () => {
+  it('nth unit discount', () => {
+    expect(lineTotal(4, 100, { id: 'n', name: 'n', unit: { type: 'none' }, minQty: 0, bundle: { type: 'nthDiscount', n: 2, percent: 50 } })).toBe(300);
+  });
+  it('volume tiers', () => {
+    const c = { id: 'v', name: 'v', unit: { type: 'none' as const }, minQty: 0, bundle: { type: 'volume' as const, tiers: [{ minQty: 3, percent: 10 }, { minQty: 6, percent: 20 }] } };
+    expect(lineTotal(2, 100, c)).toBe(200);
+    expect(lineTotal(3, 100, c)).toBe(270);
+    expect(lineTotal(6, 100, c)).toBe(480);
+  });
+  it('packaging per box', () => {
+    const r = calcOrder(defaultState.settings, { A: 13 }, scen(null, null), lookup);
+    expect(r.packaging).toBe(20);
+    expect(r.cashProfit).toBeCloseTo(r.customerPays - r.commission - r.shippingCost - 20 - r.cogs);
+  });
+  it('free-shipping cart campaign', () => {
+    const r = calcOrder(s0, { A: 4 }, scen(null, null, 'cfs500'), lookup);
+    expect(r.shippingCharged).toBe(0);
+    expect(calcOrder(s0, { A: 3 }, scen(null, null, 'cfs500'), lookup).shippingCharged).toBe(100);
+  });
+  it('product-limited campaigns are ignored on other products', () => {
+    const r = calcOrder(s0, { B: 1 }, scen(null, 'A-fx99.9'), lookup);
+    expect(r.productRevenue).toBeCloseTo(349.5);
   });
 });

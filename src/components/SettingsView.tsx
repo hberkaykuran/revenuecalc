@@ -45,16 +45,17 @@ export function SettingsView({ state, setState }: Props) {
 
       <div className="two-col">
         <section className="panel">
-          <header className="panel-head"><div><h2>Boxes</h2><p className="sub">An order goes in the smallest box that fits. Past the largest box, it ships as several boxes, billed on total desi.</p></div></header>
+          <header className="panel-head"><div><h2>Boxes</h2><p className="sub">An order goes in the smallest box that fits. Past the largest box, it ships as several boxes, billed on total desi. Packaging is your own cost per box (box, tape, label print), VAT included.</p></div></header>
           <div className="scroll">
             <table className="grid form-table">
-              <thead><tr><th>Box</th><th>Desi</th><th>Holds</th><th /></tr></thead>
+              <thead><tr><th>Box</th><th>Desi</th><th>Holds</th><th>Packaging</th><th /></tr></thead>
               <tbody>
                 {s.boxes.map((b) => (
                   <tr key={b.id}>
                     <td><input id={`b-name-${b.id}`} aria-label="Box name" value={b.name} onChange={(e) => setBox(b.id, { name: e.target.value })} /></td>
                     <td><Num id={`b-desi-${b.id}`} label="Desi" value={b.desi} min={0} width="5rem" onChange={(v) => setBox(b.id, { desi: v })} /></td>
                     <td><Num id={`b-cap-${b.id}`} label="Capacity" value={b.capacity} min={1} suffix="pcs" width="6rem" onChange={(v) => setBox(b.id, { capacity: v })} /></td>
+                    <td><Num id={`b-pack-${b.id}`} label="Packaging cost per box" value={b.packagingCost ?? 0} min={0} suffix="TL" width="6rem" onChange={(v) => setBox(b.id, { packagingCost: v })} /></td>
                     <td><button type="button" className="link danger" disabled={s.boxes.length <= 1} onClick={() => set({ boxes: s.boxes.filter((x) => x.id !== b.id) })}>Remove</button></td>
                   </tr>
                 ))}
@@ -62,7 +63,7 @@ export function SettingsView({ state, setState }: Props) {
             </table>
           </div>
           <div className="row-actions">
-            <button type="button" className="link" onClick={() => set({ boxes: [...s.boxes, { id: uid(), name: 'New box', desi: 6, capacity: 18 }] })}>Add box</button>
+            <button type="button" className="link" onClick={() => set({ boxes: [...s.boxes, { id: uid(), name: 'New box', desi: 6, capacity: 18, packagingCost: 10 }] })}>Add box</button>
           </div>
           <label className="check">
             <input id="bestfit" type="checkbox" checked={s.overflowRemainderBestFit} onChange={(e) => set({ overflowRemainderBestFit: e.target.checked })} />
@@ -78,11 +79,12 @@ export function SettingsView({ state, setState }: Props) {
             <Field label="Platform commission" hint="On products after discounts, VAT included"><Num id="comm" value={s.commissionRate} min={0} step={0.1} suffix="%" onChange={(v) => set({ commissionRate: v })} /></Field>
             <Field label="VAT inside commission"><Num id="commvat" value={s.commissionVatRate} min={0} suffix="%" onChange={(v) => set({ commissionVatRate: v })} /></Field>
             <Field label="Shipping VAT" hint="Added to the tariff"><Num id="shipvat" value={s.shippingVatRate} min={0} suffix="%" onChange={(v) => set({ shippingVatRate: v })} /></Field>
+            <Field label="VAT inside packaging"><Num id="packvat" value={s.packagingVatRate} min={0} suffix="%" onChange={(v) => set({ packagingVatRate: v })} /></Field>
             <Field label="EPH" hint="Universal service fee added to the tariff. Set 0 to ignore."><Num id="eph" value={s.ephRate} min={0} step={0.01} suffix="%" onChange={(v) => set({ ephRate: v })} /></Field>
           </div>
           <label className="check">
             <input id="deductvat" type="checkbox" checked={s.deductVat} onChange={(e) => set({ deductVat: e.target.checked })} />
-            Deduct VAT payable from profit (VAT collected minus VAT paid on goods, shipping and commission).
+            Deduct VAT payable from profit. Your prices include VAT that belongs to the state. You pay it the VAT you collected, minus the VAT you paid on goods, shipping, packaging and commission.
           </label>
         </section>
       </div>

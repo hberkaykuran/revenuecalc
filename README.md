@@ -16,7 +16,16 @@ npm run build:artifact  # single page in dist-artifact/revenue-calculator.html
 2. **Cart campaign**: checked on the total after product campaigns; the highest tier reached applies.
 3. **Shipping fee** charged to the customer unless the product total after all discounts reaches the free-shipping threshold.
 4. **Commission**: % of the product total after discounts (shipping excluded).
-5. **Boxes**: smallest box that fits; above the largest box, whole large boxes. Shipping cost = tariff for the total desi + EPH + VAT.
-6. **Profit** = customer pays − commission − shipping cost − cost of goods − VAT payable (VAT collected on products and shipping fee minus VAT paid on goods, shipping and commission). VAT deduction can be switched off.
+5. **Boxes**: smallest box that fits; above the largest box, whole large boxes. Shipping cost = tariff for the total desi + EPH + VAT. Each box also has its own packaging cost (box, tape, label).
+6. **Profit** = customer pays − commission − shipping cost − packaging − cost of goods − VAT payable. VAT payable is the VAT collected on products and the shipping fee, minus the VAT paid on goods, shipping, packaging and commission. VAT deduction can be switched off.
+
+## Tabs
+
+- **Results**: box milestones, every order size, saved scenarios side by side, and an A × B mix grid.
+- **Campaign lab**: every campaign in the library for each order size, with one-click Activate.
+- **Ideas**: generates campaigns for a goal ("customers buy 1, get them to buy 3"), filtered by margin floor and customer saving, plus notes on shipping and box cliffs.
+- **Order calculator**: one order in full detail.
+- **Campaigns**: edit the campaign library and saved scenarios.
+- **Settings**: products, boxes, packaging, fees, VAT and the shipping tariff.
 
 All prices, costs and fees are VAT included except the shipping tariff, which is VAT and EPH excluded, as in the contract.

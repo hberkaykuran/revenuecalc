@@ -1,5 +1,5 @@
 import type {
-  Box, Bundle, Cart, CartCampaign, ProductCampaign, Scenario, Settings, TariffRow, UnitDiscount,
+  Box, Bundle, Cart, CartCampaign, Product, ProductCampaign, Settings, Setup, TariffRow, UnitDiscount,
 } from './types';
 
 const EPS = 1e-9;
@@ -24,6 +24,13 @@ export function bundleTotal(qty: number, unitPrice: number, b: Bundle): number {
   if (b.type === 'xForPrice' && b.qty > 0) {
     const groups = Math.floor(qty / b.qty);
     return groups * b.price + (qty - groups * b.qty) * unitPrice;
+  }
+  if (b.type === 'nthDiscount' && b.n > 0) {
+    return qty * unitPrice - Math.floor(qty / b.n) * unitPrice * Math.min(100, b.percent) / 100;
+  }
+  if (b.type === 'volume') {
+    const tier = [...b.tiers].sort((x, y) => y.minQty - x.minQty).find((t) => qty >= t.minQty);
+    return qty * unitPrice * (1 - Math.min(100, tier?.percent ?? 0) / 100);
   }
   return qty * unitPrice;
 }
@@ -57,15 +64,34 @@ export function tariffPrice(desi: number, tariff: TariffRow[], zone: number): nu
   return row.perDesi ? p * Math.ceil(desi - EPS) : p;
 }
 
+/** Highest discount tier the cart reaches (free-shipping tiers are handled separately). */
 export function bestTier(c: CartCampaign | null | undefined, subtotal: number) {
   if (!c) return null;
-  const ok = c.tiers.filter((t) => subtotal + EPS >= t.min).sort((a, b) => b.min - a.min);
+  const ok = c.tiers.filter((t) => t.type !== 'freeShipping' && subtotal + EPS >= t.min).sort((a, b) => b.min - a.min);
   return ok[0] ?? null;
+}
+
+export function cartFreeShipping(c: CartCampaign | null | undefined, subtotal: number) {
+  return !!c?.tiers.some((t) => t.type === 'freeShipping' && subtotal + EPS >= t.min);
 }
 
 export function nextTier(c: CartCampaign | null | undefined, subtotal: number) {
   if (!c) return null;
   return c.tiers.filter((t) => t.min > subtotal + EPS).sort((a, b) => a.min - b.min)[0] ?? null;
+}
+
+export function appliesTo(c: ProductCampaign, p: Product) {
+  return !c.productIds?.length || c.productIds.includes(p.id);
+}
+
+export type CampaignKind = 'percent' | 'flat' | 'fixed' | 'buyXpayY' | 'xForPrice' | 'nthDiscount' | 'volume' | 'none';
+export const KIND_LABELS: Record<CampaignKind, string> = {
+  percent: '% off', flat: 'TL off', fixed: 'Fixed price', buyXpayY: 'Buy X pay Y',
+  xForPrice: 'Bundle price', nthDiscount: 'Nth unit off', volume: 'Volume', none: 'Other',
+};
+export function campaignKind(c: ProductCampaign): CampaignKind {
+  if (c.bundle.type !== 'none') return c.bundle.type;
+  return c.unit.type;
 }
 
 export type LineResult = {
@@ -95,6 +121,7 @@ export type OrderResult = {
   desi: number;
   shippingTariff: number; // excl VAT/EPH
   shippingCost: number; // incl VAT & EPH
+  packaging: number; // box, tape, label… incl VAT
   cogs: number;
   cashProfit: number;
   vatOutput: number;
@@ -112,13 +139,14 @@ export type Lookup = {
 
 const vatPart = (gross: number, rate: number) => (gross * rate) / (100 + rate);
 
-export function calcOrder(settings: Settings, cart: Cart, scenario: Scenario | null, lookup: Lookup): OrderResult {
+export function calcOrder(settings: Settings, cart: Cart, scenario: Setup | null, lookup: Lookup): OrderResult {
   const lines: LineResult[] = [];
   for (const p of settings.products) {
     const qty = cart[p.id] ?? 0;
     if (qty <= 0) continue;
     const cid = scenario?.productCampaigns[p.id] ?? null;
-    const c = cid ? lookup.productCampaigns.find((x) => x.id === cid) : null;
+    const found = cid ? lookup.productCampaigns.find((x) => x.id === cid) : null;
+    const c = found && appliesTo(found, p) ? found : null;
     const list = qty * p.price;
     const after = lineTotal(qty, p.price, c);
     lines.push({
@@ -139,7 +167,7 @@ export function calcOrder(settings: Settings, cart: Cart, scenario: Scenario | n
   for (const l of lines) l.afterCart = subtotal > 0 ? l.afterCampaign * (1 - cartDiscount / subtotal) : 0;
   const productRevenue = subtotal - cartDiscount;
 
-  const freeShipping = productRevenue + EPS >= settings.freeShippingThreshold;
+  const freeShipping = productRevenue + EPS >= settings.freeShippingThreshold || cartFreeShipping(cartCampaign, subtotal);
   const shippingCharged = qty > 0 && !freeShipping ? settings.customerShippingFee : 0;
   const customerPays = productRevenue + shippingCharged;
   const commission = productRevenue * settings.commissionRate / 100;
@@ -150,22 +178,24 @@ export function calcOrder(settings: Settings, cart: Cart, scenario: Scenario | n
   const shippingTariff = tariffPrice(desi, settings.tariff, settings.zoneIndex);
   const shippingNet = shippingTariff * (1 + settings.ephRate / 100);
   const shippingCost = shippingNet * (1 + settings.shippingVatRate / 100);
+  const packaging = boxes.reduce((s, b) => s + (b.packagingCost ?? 0), 0);
 
   const cogs = lines.reduce((s, l) => s + l.cogs, 0);
-  const cashProfit = customerPays - commission - shippingCost - cogs;
+  const cashProfit = customerPays - commission - shippingCost - packaging - cogs;
 
   const vatOutput = lines.reduce((s, l) => s + vatPart(l.afterCart, l.vatRate), 0)
     + vatPart(shippingCharged, settings.shippingVatRate);
   const vatInput = lines.reduce((s, l) => s + vatPart(l.cogs, l.vatRate), 0)
     + shippingNet * settings.shippingVatRate / 100
-    + vatPart(commission, settings.commissionVatRate);
+    + vatPart(commission, settings.commissionVatRate)
+    + vatPart(packaging, settings.packagingVatRate);
   const vatPayable = vatOutput - vatInput;
   const profit = settings.deductVat ? cashProfit - vatPayable : cashProfit;
 
   return {
     qty, lines, list, campaignDiscount: list - subtotal, subtotal, cartDiscount, productRevenue,
     shippingCharged, freeShipping, customerPays, commission, boxes, desi, shippingTariff, shippingCost,
-    cogs, cashProfit, vatOutput, vatInput, vatPayable, profit,
+    packaging, cogs, cashProfit, vatOutput, vatInput, vatPayable, profit,
     margin: customerPays > 0 ? profit / customerPays : 0,
     totalDiscount: list - productRevenue,
   };

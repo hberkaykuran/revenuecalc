@@ -12,6 +12,7 @@ export type Box = {
   name: string;
   desi: number;
   capacity: number; // slots
+  packagingCost: number; // box, tape, label print… per box, VAT included
 };
 
 export type TariffRow = {
@@ -29,6 +30,7 @@ export type Settings = {
   tariff: TariffRow[];
   shippingVatRate: number; // % added on top of tariff
   ephRate: number; // % added on top of tariff (Evrensel Hizmet Payı)
+  packagingVatRate: number; // VAT contained in packaging cost
   commissionRate: number; // % of product revenue (after discounts)
   commissionVatRate: number; // VAT contained in the commission (for VAT settlement)
   customerShippingFee: number; // VAT included
@@ -43,10 +45,14 @@ export type UnitDiscount =
   | { type: 'flat'; value: number }
   | { type: 'fixed'; value: number };
 
+export type VolumeTier = { minQty: number; percent: number };
+
 export type Bundle =
   | { type: 'none' }
   | { type: 'buyXpayY'; buy: number; pay: number }
-  | { type: 'xForPrice'; qty: number; price: number };
+  | { type: 'xForPrice'; qty: number; price: number }
+  | { type: 'nthDiscount'; n: number; percent: number } // every n-th unit X% off
+  | { type: 'volume'; tiers: VolumeTier[] }; // whole line X% off from a quantity
 
 export type ProductCampaign = {
   id: string;
@@ -54,23 +60,26 @@ export type ProductCampaign = {
   unit: UnitDiscount;
   minQty: number; // unit discount only applies from this quantity
   bundle: Bundle;
+  productIds?: string[]; // limit to these products; empty/undefined = any product
 };
 
-export type CartTier = { min: number; type: 'percent' | 'flat'; value: number };
+export type CartTier = { min: number; type: 'percent' | 'flat' | 'freeShipping'; value: number };
 
 export type CartCampaign = { id: string; name: string; tiers: CartTier[] };
 
-export type Scenario = {
-  id: string;
-  name: string;
+/** Which campaign runs on each product, plus one cart campaign. */
+export type Setup = {
   productCampaigns: Record<string, string | null>; // productId -> campaignId
   cartCampaignId: string | null;
 };
+
+export type Scenario = Setup & { id: string; name: string };
 
 export type AppState = {
   settings: Settings;
   productCampaigns: ProductCampaign[];
   cartCampaigns: CartCampaign[];
+  active: Setup;
   scenarios: Scenario[];
 };
 

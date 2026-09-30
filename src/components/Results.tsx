@@ -1,20 +1,21 @@
 import { useMemo, useState } from 'react';
 import { boxLabel, calcOrder, type OrderResult } from '../engine';
 import { pct, tl, tl0 } from '../format';
-import type { AppState, Cart, Scenario } from '../types';
+import type { AppState, Cart, Setup } from '../types';
 import { Num, Segmented } from './inputs';
 
-type Props = { state: AppState; scenario: Scenario };
+type Props = { state: AppState };
 
 const tone = (n: number) => (n < 0 ? 'neg' : '');
 
-export function Results({ state, scenario }: Props) {
+export function Results({ state }: Props) {
+  const scenario = state.active;
   const { settings } = state;
   const products = settings.products;
   const [productId, setProductId] = useState(products[0]?.id ?? '');
   const [maxQty, setMaxQty] = useState(24);
   const product = products.find((p) => p.id === productId) ?? products[0];
-  const calc = (cart: Cart, s: Scenario = scenario) => calcOrder(settings, cart, s, state);
+  const calc = (cart: Cart, s: Setup = scenario) => calcOrder(settings, cart, s, state);
 
   const rows = useMemo(() => {
     if (!product) return [];
@@ -42,7 +43,7 @@ export function Results({ state, scenario }: Props) {
         <header className="panel-head">
           <div>
             <h2>Box milestones</h2>
-            <p className="sub">Profit per order when a customer fills each box with one product. Scenario: <b>{scenario.name}</b></p>
+            <p className="sub">Profit per order when a customer fills each box with one product, with the campaigns above.</p>
           </div>
         </header>
         <div className="scroll">
@@ -95,7 +96,7 @@ export function Results({ state, scenario }: Props) {
               <tr>
                 <th>Qty</th><th>Box</th><th>Desi</th><th>List</th><th>Discounts</th><th>Products</th>
                 <th>Shipping in</th><th>Customer pays</th><th>Commission</th><th>Shipping cost</th>
-                <th>Cost of goods</th><th>{settings.deductVat ? 'VAT payable' : 'VAT (info)'}</th>
+                <th>Packaging</th><th>Cost of goods</th><th>{settings.deductVat ? 'VAT payable' : 'VAT (info)'}</th>
                 <th>Profit</th><th>Margin</th><th>Per unit</th><th>+1 unit</th>
               </tr>
             </thead>
@@ -112,6 +113,7 @@ export function Results({ state, scenario }: Props) {
                   <td>{tl(r.customerPays)}</td>
                   <td className="muted">−{tl(r.commission)}</td>
                   <td className="muted">−{tl(r.shippingCost)}</td>
+                  <td className="muted">−{tl(r.packaging)}</td>
                   <td className="muted">−{tl(r.cogs)}</td>
                   <td className="muted">{settings.deductVat ? '−' : ''}{tl(r.vatPayable)}</td>
                   <td className="strong"><span className={tone(r.profit)}>{tl(r.profit)}</span></td>
@@ -132,7 +134,8 @@ export function Results({ state, scenario }: Props) {
 }
 
 function Compare({ state, productId, maxQty }: { state: AppState; productId: string; maxQty: number }) {
-  const { scenarios, settings } = state;
+  const { settings } = state;
+  const scenarios = [{ id: '__active', name: 'Active now', ...state.active }, ...state.scenarios];
   const product = settings.products.find((p) => p.id === productId)!;
   const qs = Array.from({ length: Math.min(Math.max(1, maxQty), 200) }, (_, i) => i + 1);
   return (
@@ -140,7 +143,7 @@ function Compare({ state, productId, maxQty }: { state: AppState; productId: str
       <header className="panel-head">
         <div>
           <h2>Scenario comparison · {product.name}</h2>
-          <p className="sub">Profit per order in each scenario. The best one for each quantity is highlighted.</p>
+          <p className="sub">Profit per order for the active campaigns and each saved scenario. The best one for each quantity is highlighted.</p>
         </div>
       </header>
       <div className="scroll">
@@ -171,7 +174,7 @@ function Compare({ state, productId, maxQty }: { state: AppState; productId: str
   );
 }
 
-function MixGrid({ state, scenario }: { state: AppState; scenario: Scenario }) {
+function MixGrid({ state, scenario }: { state: AppState; scenario: Setup }) {
   const { settings } = state;
   const ps = settings.products;
   const [xId, setX] = useState(ps[0].id);
@@ -201,7 +204,7 @@ function MixGrid({ state, scenario }: { state: AppState; scenario: Scenario }) {
       <header className="panel-head">
         <div>
           <h2>Mixed orders</h2>
-          <p className="sub">Every combination of two products in one order, with each product's own campaign and the cart campaign applied. Scenario: <b>{scenario.name}</b></p>
+          <p className="sub">Every combination of two products in one order, with each product's own campaign and the cart campaign applied.</p>
         </div>
         <div className="controls">
           <label className="inline">Across
