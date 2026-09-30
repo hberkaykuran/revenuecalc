@@ -1,5 +1,5 @@
 import {
-  AppstoreOutlined, BarChartOutlined, BulbOutlined, CalculatorOutlined, CheckCircleOutlined, ExperimentOutlined,
+  AppstoreOutlined, BarChartOutlined, BulbOutlined, CalculatorOutlined, CalendarOutlined, CheckCircleOutlined, ExperimentOutlined,
   MenuFoldOutlined, ShoppingCartOutlined, SwapOutlined, TagsOutlined, WarningOutlined,
 } from '@ant-design/icons';
 import { App as AntApp, Badge, Button, ConfigProvider, Drawer, Flex, Grid, Layout, Menu, Segmented, Tag, theme, Tooltip, Typography } from 'antd';
@@ -10,6 +10,7 @@ import { CampaignSidebar } from './components/CampaignSidebar';
 import { Compare } from './components/Compare';
 import { Ideas } from './components/Ideas';
 import { Lab } from './components/Lab';
+import { Monthly } from './components/Monthly';
 import { OrderView } from './components/OrderView';
 import { ProductsCosts } from './components/ProductsCosts';
 import { Results } from './components/Results';
@@ -21,9 +22,9 @@ import { campaignLabel } from './labels';
 import { fromView, toView, useStore, useUiPrefs } from './store';
 import type { AppState, Campaign, Cart } from './types';
 
-type TabId = 'results' | 'compare' | 'order' | 'lab' | 'ideas' | 'costs';
-const TABS: TabId[] = ['results', 'compare', 'order', 'lab', 'ideas', 'costs'];
-const WITH_CAMPAIGNS: TabId[] = ['results', 'compare', 'order', 'lab'];
+type TabId = 'results' | 'compare' | 'order' | 'monthly' | 'lab' | 'ideas' | 'costs';
+const TABS: TabId[] = ['results', 'compare', 'order', 'monthly', 'lab', 'ideas', 'costs'];
+const WITH_CAMPAIGNS: TabId[] = ['results', 'compare', 'order', 'monthly', 'lab'];
 
 function useDarkMode() {
   const q = typeof window !== 'undefined' ? window.matchMedia?.('(prefers-color-scheme: dark)') : undefined;
@@ -78,11 +79,12 @@ function Shell({ dark }: { dark: boolean }) {
     { key: 'results', icon: <BarChartOutlined />, label: t('Results') },
     { key: 'compare', icon: <SwapOutlined />, label: t('Compare') },
     { key: 'order', icon: <ShoppingCartOutlined />, label: t('Order calculator') },
+    { key: 'monthly', icon: <CalendarOutlined />, label: t('Monthly') },
     { key: 'lab', icon: <ExperimentOutlined />, label: t('Campaign lab') },
     { key: 'ideas', icon: <BulbOutlined />, label: t('Ideas') },
     { key: 'costs', icon: <AppstoreOutlined />, label: t('Products & costs') },
   ];
-  const content = { results: <Results />, compare: <Compare />, order: <OrderView />, lab: <Lab />, ideas: <Ideas />, costs: <ProductsCosts /> }[tab];
+  const content = { results: <Results />, compare: <Compare />, order: <OrderView />, monthly: <Monthly />, lab: <Lab />, ideas: <Ideas />, costs: <ProductsCosts /> }[tab];
   const title = navItems.find((n) => n.key === tab)?.label;
   const navCollapsed = wide ? !!ui.nav : true;
 
@@ -91,14 +93,14 @@ function Shell({ dark }: { dark: boolean }) {
       <AntApp>
         <Ctx.Provider value={ctx}>
           <Layout className="shell">
-            <Layout.Sider theme={dark ? 'dark' : 'light'} width={220} collapsedWidth={wide ? 64 : 0} collapsed={navCollapsed} trigger={null}
+            <Layout.Sider theme="light" width={220} collapsedWidth={wide ? 64 : 0} collapsed={navCollapsed} trigger={null}
               style={{ borderRight: `1px solid ${token.colorBorderSecondary}` }} className="nav">
               <Flex vertical style={{ height: '100%' }}>
                 <Flex align="center" gap={8} className="brand">
                   <CalculatorOutlined style={{ fontSize: 20, color: token.colorPrimary }} />
                   {!navCollapsed && <Typography.Text strong style={{ fontSize: 16 }}>{t('Revenue calculator')}</Typography.Text>}
                 </Flex>
-                <Menu mode="inline" theme={dark ? 'dark' : 'light'} selectedKeys={[tab]} items={navItems} onClick={(e) => { setTab(e.key as TabId); }} style={{ borderInlineEnd: 0, flex: 1 }} />
+                <Menu mode="inline" selectedKeys={[tab]} items={navItems} onClick={(e) => { setTab(e.key as TabId); }} style={{ borderInlineEnd: 0, flex: 1 }} />
                 <Flex vertical gap={8} className="nav-foot" align={navCollapsed ? 'center' : 'stretch'}>
                   {saveStatus === 'saved'
                     ? (navCollapsed ? <Tooltip title={t('Saved in this browser')} placement="right"><CheckCircleOutlined style={{ color: token.colorSuccess }} /></Tooltip> : <Tag icon={<CheckCircleOutlined />} color="success" style={{ margin: 0, whiteSpace: 'normal' }}>{t('Saved in this browser')}</Tag>)

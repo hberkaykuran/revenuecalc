@@ -158,7 +158,7 @@ export function combinations(cs: Campaign[], rules: StackRules): Campaign[][] {
 
 // ---------- order ----------
 
-export type LineResult = { productId: string; name: string; qty: number; list: number; afterCampaign: number; afterCart: number; cogs: number; vatRate: number; commissionRate: number };
+export type LineResult = { productId: string; name: string; qty: number; list: number; afterCampaign: number; afterCart: number; cogs: number; vatRate: number; costVatRate: number; commissionRate: number };
 
 /** Commission rate for a unit price: the matching band, else the flat rate. */
 export function commissionRate(unitPrice: number, bands: CommissionBand[] | undefined, flat: number): number {
@@ -218,7 +218,7 @@ export function calcWith(settings: Settings, cart: Cart, cs: Campaign[]): OrderR
       for (const c of mine) if (lineTotal(qty, p.price, [c.mechanic]) < list - 0.005) touched.add(c.id);
     }
     const rate = commissionRate(after / qty, p.commissionBands, settings.commissionRate);
-    lines.push({ productId: p.id, name: p.name, qty, list, afterCampaign: after, afterCart: after, cogs: qty * p.cost, vatRate: p.vatRate, commissionRate: rate });
+    lines.push({ productId: p.id, name: p.name, qty, list, afterCampaign: after, afterCart: after, cogs: qty * p.cost, vatRate: p.vatRate, costVatRate: p.costVatRate ?? p.vatRate, commissionRate: rate });
   }
   const qty = lines.reduce((s, l) => s + l.qty, 0);
   const list = lines.reduce((s, l) => s + l.list, 0);
@@ -266,12 +266,12 @@ export function calcWith(settings: Settings, cart: Cart, cs: Campaign[]): OrderR
   const cashProfit = customerPays - costs;
 
   const vatOutput = lines.reduce((s, l) => s + vatPart(l.afterCart, l.vatRate), 0) + vatPart(shippingCharged, settings.shippingVatRate);
-  const vatInput = lines.reduce((s, l) => s + vatPart(l.cogs, l.vatRate), 0)
+  const vatInput = lines.reduce((s, l) => s + vatPart(l.cogs, l.costVatRate), 0)
     + shippingNet * settings.shippingVatRate / 100
     + vatPart(commission + orderFee, settings.commissionVatRate)
     + vatPart(packaging, settings.packagingVatRate);
   const vatPayable = vatOutput - vatInput;
-  const profit = settings.deductVat ? cashProfit - vatPayable : cashProfit;
+  const profit = profitAfterVat(cashProfit, vatPayable, settings.vatMode);
 
   return {
     qty, lines, list, campaignDiscount: list - subtotal, subtotal, cartDiscount, productRevenue,
@@ -282,6 +282,13 @@ export function calcWith(settings: Settings, cart: Cart, cs: Campaign[]): OrderR
     applied: cs.filter((c) => touched.has(c.id)),
     skipped: [],
   };
+}
+
+/** Profit under a VAT treatment (see Settings.vatMode). */
+export function profitAfterVat(cashProfit: number, vatPayable: number, mode: Settings['vatMode'] | undefined): number {
+  if (mode === 'recoverable') return cashProfit - vatPayable;
+  if (mode === 'notRecoverable') return cashProfit - Math.max(0, vatPayable);
+  return cashProfit;
 }
 
 /** Campaigns that could matter for this cart. */

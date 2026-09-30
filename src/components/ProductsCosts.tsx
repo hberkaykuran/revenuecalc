@@ -1,7 +1,8 @@
 import { DeleteOutlined, DownloadOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons';
-import { Alert, Button, Card, Checkbox, Col, Flex, Input, Popconfirm, Row, Select, Space, Table, Typography, Upload } from 'antd';
+import { Alert, Button, Card, Checkbox, Col, Flex, Input, Popconfirm, Radio, Row, Select, Space, Table, Typography, Upload } from 'antd';
 import { useState } from 'react';
 import { useApp } from '../context';
+import { MESH_STICK_CATALOG } from '../catalog';
 import { defaultStore } from '../defaults';
 import { pct, t, uid } from '../i18n';
 import { migrate } from '../store';
@@ -11,6 +12,7 @@ import { Num } from './common';
 export function ProductsCosts() {
   const { state, setState } = useApp();
   const s = state.settings;
+  const [bulk, setBulk] = useState(55);
   const set = (patch: Partial<Settings>) => setState((st) => ({ ...st, settings: { ...st.settings, ...patch } }));
   const setProduct = (id: string, patch: Partial<Product>) => set({ products: s.products.map((p) => (p.id === id ? { ...p, ...patch } : p)) });
   const setBox = (id: string, patch: Partial<Box>) => set({ boxes: s.boxes.map((b) => (b.id === id ? { ...b, ...patch } : b)) });
@@ -18,15 +20,37 @@ export function ProductsCosts() {
 
   return (
     <Flex vertical gap={12}>
-      <Card size="small" title={t('Products')} extra={<Button size="small" icon={<PlusOutlined />} onClick={() => set({ products: [...s.products, { id: uid(), name: t('Product {n}', { n: s.products.length + 1 }), cost: 50, price: 120, vatRate: 20, sizeUnits: 1 }] })}>{t('Add product')}</Button>}>
+      <Card size="small" title={t('Products')} extra={
+        <Space wrap>
+          <Popconfirm title={t('Add the {n} Mesh Stick products with their Shopify prices?', { n: MESH_STICK_CATALOG.length })} description={t('Products you already have (same SKU) are skipped. Costs start at 0.')}
+            okText={t('Add')} cancelText={t('Cancel')} onConfirm={() => {
+              const have = new Set(s.products.map((p) => p.sku).filter(Boolean));
+              const add = MESH_STICK_CATALOG.filter((c) => !have.has(c.sku)).map((c) => ({ id: uid(), sku: c.sku, barcode: c.barcode, name: c.name, cost: 0, price: c.price, vatRate: 1, sizeUnits: 1 }));
+              set({ products: [...s.products, ...add] });
+            }}>
+            <Button size="small">{t('Add Mesh Stick products')}</Button>
+          </Popconfirm>
+          <Button size="small" icon={<PlusOutlined />} onClick={() => set({ products: [...s.products, { id: uid(), name: t('Product {n}', { n: s.products.length + 1 }), cost: 50, price: 120, vatRate: 1, sizeUnits: 1 }] })}>{t('Add product')}</Button>
+        </Space>
+      }>
         <Typography.Paragraph type="secondary">{t('Sale price and cost include VAT.')}</Typography.Paragraph>
-        <Table size="small" rowKey="id" pagination={false} dataSource={s.products} scroll={{ x: 'max-content' }}
+        {s.products.some((p) => !p.cost) && (
+          <Alert type="warning" showIcon style={{ marginBottom: 8 }} message={t('{n} products have no cost yet, so their margin reads too high.', { n: s.products.filter((p) => !p.cost).length })}
+            action={
+              <Space.Compact>
+                <Num id="bulk-cost" label={t('Cost for all of them')} value={bulk} min={0} step={5} suffix="TL" width={110} onChange={setBulk} />
+                <Button onClick={() => bulk > 0 && set({ products: s.products.map((p) => (p.cost ? p : { ...p, cost: bulk })) })}>{t('Set for all without cost')}</Button>
+              </Space.Compact>
+            } />
+        )}
+        <Table size="small" rowKey="id" pagination={s.products.length > 15 ? { pageSize: 15, size: 'small' } : false} dataSource={s.products} scroll={{ x: 'max-content' }}
           columns={[
-            { key: 'name', title: t('Name'), render: (_, p) => <Input id={`p-name-${p.id}`} value={p.name} onChange={(e) => setProduct(p.id, { name: e.target.value })} style={{ width: 160 }} /> },
+            { key: 'name', title: t('Name'), render: (_, p) => <Input id={`p-name-${p.id}`} value={p.name} onChange={(e) => setProduct(p.id, { name: e.target.value })} style={{ width: 260 }} /> },
             { key: 'price', title: t('Sale price'), render: (_, p) => <Num id={`p-price-${p.id}`} value={p.price} min={0} step={5} suffix="TL" onChange={(v) => setProduct(p.id, { price: v })} /> },
             { key: 'cost', title: t('Cost'), render: (_, p) => <Num id={`p-cost-${p.id}`} value={p.cost} min={0} step={5} suffix="TL" onChange={(v) => setProduct(p.id, { cost: v })} /> },
             { key: 'gm', title: t('Gross margin'), align: 'right', render: (_, p) => (p.price > 0 ? pct((p.price - p.cost) / p.price) : '—') },
-            { key: 'vat', title: t('VAT rate'), render: (_, p) => <Num id={`p-vat-${p.id}`} value={p.vatRate} min={0} suffix="%" width={90} onChange={(v) => setProduct(p.id, { vatRate: v })} /> },
+            { key: 'vat', title: t('Sale VAT'), render: (_, p) => <Num id={`p-vat-${p.id}`} value={p.vatRate} min={0} suffix="%" width={90} onChange={(v) => setProduct(p.id, { vatRate: v })} /> },
+            { key: 'cvat', title: t('Purchase VAT'), render: (_, p) => <Num id={`p-cvat-${p.id}`} value={p.costVatRate ?? p.vatRate} min={0} suffix="%" width={90} onChange={(v) => setProduct(p.id, { costVatRate: v })} /> },
             { key: 'size', title: t('Box slots per unit'), render: (_, p) => <Num id={`p-size-${p.id}`} value={p.sizeUnits} min={0} step={0.1} width={90} onChange={(v) => setProduct(p.id, { sizeUnits: v })} /> },
             { key: 'x', title: '', render: (_, p) => (
               <Popconfirm title={t('Remove {p}?', { p: p.name })} okText={t('Remove')} cancelText={t('Cancel')} disabled={s.products.length <= 1} onConfirm={() => set({ products: s.products.filter((x) => x.id !== p.id) })}>
@@ -73,9 +97,12 @@ export function ProductsCosts() {
                 </Col>
               ))}
             </Row>
-            <Checkbox style={{ marginTop: 12 }} checked={s.deductVat} onChange={(e) => set({ deductVat: e.target.checked })}>
-              {t('Deduct VAT payable from profit. Off: profit is shown with VAT included and VAT is tracked separately.')}
-            </Checkbox>
+            <Typography.Text strong style={{ display: 'block', marginTop: 16 }}>{t('VAT in profit')}</Typography.Text>
+            <Radio.Group value={s.vatMode} onChange={(e) => set({ vatMode: e.target.value })} style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+              <Radio value="gross">{t('Leave VAT out of profit. Prices and costs count as paid; VAT is shown separately.')}</Radio>
+              <Radio value="recoverable">{t('VAT is settled and credit comes back. VAT you owe lowers profit; excess VAT you paid (devreden KDV) raises it, because you get it refunded or use it later.')}</Radio>
+              <Radio value="notRecoverable">{t('VAT is settled but credit is lost. VAT you owe lowers profit; excess VAT you paid is never recovered.')}</Radio>
+            </Radio.Group>
           </Card>
         </Col>
       </Row>

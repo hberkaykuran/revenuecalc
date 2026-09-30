@@ -3,14 +3,29 @@ export type Product = {
   name: string;
   cost: number; // VAT included
   price: number; // VAT included sale price
-  vatRate: number; // % VAT inside price and cost (only used for the separate VAT figure)
+  vatRate: number; // % VAT inside the sale price
+  costVatRate?: number; // % VAT inside the cost (purchase invoice); defaults to vatRate
   sizeUnits: number; // box slots one unit takes (1 = standard)
   barcode?: string;
+  sku?: string;
   /** Commission by price band (Trendyol tariffs). Filled per channel; empty = the channel's flat rate. */
   commissionBands?: CommissionBand[];
 };
 
 /** Commission rate for a unit price between min and max (inclusive; null = open). */
+/** Expected month: typical orders and the costs that are not per box. */
+export type MonthlyPlan = {
+  orders: { id: string; lines: { productId: string; qty: number }[]; perMonth: number }[];
+  fixed: { id: string; name: string; amount: number; vatRate: number }[]; // per month, VAT included
+  adPerOrder: number; // TL per order, VAT included
+  adVatRate: number;
+  returnRate: number; // % of orders returned
+  returnCost: number; // TL lost per returned order (both shipping legs, damaged goods…), VAT included
+  returnVatRate: number;
+};
+
+export type VatMode = 'gross' | 'recoverable' | 'notRecoverable';
+
 export type CommissionBand = { min: number | null; max: number | null; rate: number };
 
 export type Box = {
@@ -43,7 +58,14 @@ export type Settings = {
   orderFee: number; // fixed platform fee per order (e.g. Trendyol service fee), VAT included
   freeShippingThreshold: number;
   overflowRemainderBestFit: boolean;
-  deductVat: boolean; // off by default: VAT is tracked separately
+  deductVat?: boolean; // old setting, read once by migrate()
+  /**
+   * How VAT enters profit. gross: prices and costs as paid, VAT tracked separately.
+   * recoverable: VAT owed is a cost and VAT credit comes back (refund or offset).
+   * notRecoverable: VAT owed is a cost; a credit is never recovered.
+   */
+  vatMode: VatMode;
+  monthly?: MonthlyPlan;
 };
 
 /**

@@ -78,11 +78,16 @@ export function OrderView() {
               { key: 'pf', label: <b>{t('Profit')}</b>, children: <Flex justify="end" gap={8} align="baseline"><Typography.Text type="secondary">{pct(r.margin)} · {r.qty ? `${tl(r.profit / r.qty)} ${t('per unit')}` : ''}</Typography.Text><Typography.Title level={4} style={{ margin: 0 }} type={r.profit < 0 ? 'danger' : undefined}>{tl(r.profit)} TL</Typography.Title></Flex> },
             ]} />
           <Collapse size="small" style={{ marginTop: 12 }} items={[{
-            key: 'vat', label: `${t('VAT on this order (tracked separately)')}: ${tl(r.vatPayable)} TL`,
+            key: 'vat', label: r.vatPayable >= 0 ? t('VAT you owe for this order: {x} TL', { x: tl(r.vatPayable) }) : t('VAT credit from this order: {x} TL', { x: tl(-r.vatPayable) }),
             children: (
               <Typography.Paragraph style={{ margin: 0 }}>
-                {t('Your prices include VAT. Of what the customer pays, {out} TL is VAT you collect for the state. You also paid {inp} TL VAT on goods, shipping, packaging and commission. The difference, {d} TL, is what you pay in your VAT return.', { out: tl(r.vatOutput), inp: tl(r.vatInput), d: tl(r.vatPayable) })}{' '}
-                {settings.deductVat ? t('It is deducted from the profit above.') : t('It is not deducted from the profit above. You can change that in Products & costs.')}
+                {t('Of what the customer pays, {out} TL is VAT you collect for the state (sale VAT). You paid {inp} TL VAT on the goods, shipping, packaging and commission.', { out: tl(r.vatOutput), inp: tl(r.vatInput) })}{' '}
+                {r.vatPayable >= 0
+                  ? t('You collected more than you paid, so {d} TL goes to the state in your VAT return.', { d: tl(r.vatPayable) })
+                  : t('You paid {d} TL more than you collected. That is VAT credit (devreden KDV): it lowers what you owe in later months, or can be claimed back.', { d: tl(-r.vatPayable) })}{' '}
+                {settings.vatMode === 'gross' ? t('It is not in the profit above. You can change that in Products & costs.')
+                  : settings.vatMode === 'recoverable' ? t('The profit above includes it.')
+                  : r.vatPayable >= 0 ? t('The profit above includes it.') : t('The profit above treats the credit as lost.')}
               </Typography.Paragraph>
             ),
           }]} />

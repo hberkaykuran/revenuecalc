@@ -7,8 +7,8 @@ export const defaultState: AppState = {
   version: 3,
   settings: {
     products: [
-      { id: 'A', name: 'A', cost: 55, price: 134.9, vatRate: 20, sizeUnits: 1 },
-      { id: 'B', name: 'B', cost: 115, price: 349.5, vatRate: 20, sizeUnits: 1 },
+      { id: 'A', name: 'A', cost: 55, price: 134.9, vatRate: 1, sizeUnits: 1 },
+      { id: 'B', name: 'B', cost: 115, price: 349.5, vatRate: 1, sizeUnits: 1 },
     ],
     boxes: [
       { id: 'small', name: 'Small', desi: 1, capacity: 3, packagingCost: 10 },
@@ -30,7 +30,7 @@ export const defaultState: AppState = {
     orderFee: 0,
     freeShippingThreshold: 750,
     overflowRemainderBestFit: false,
-    deductVat: false,
+    vatMode: 'gross',
   },
   // a few examples to start from; all numbers are editable
   campaigns: [

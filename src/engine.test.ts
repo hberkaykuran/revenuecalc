@@ -53,7 +53,7 @@ describe('orders', () => {
     expect(r.commission).toBeCloseTo(134.9 * 0.047);
     expect(r.shippingCost).toBeCloseTo(105.6);
     expect(r.profit).toBeCloseTo(234.9 - 134.9 * 0.047 - 105.6 - 55);
-    expect(r.vatPayable).toBeGreaterThan(0);
+    expect(r.vatPayable).toBeLessThan(0); // 1% on the product, 20% on shipping: a credit
   });
   it('free shipping after discounts', () => {
     expect(calcWith(s0, { A: 6 }, []).shippingCharged).toBe(0);
@@ -78,6 +78,29 @@ describe('orders', () => {
   });
   it('product-limited campaigns skip other products', () => {
     expect(calcWith(s0, { B: 1 }, [camp({ type: 'fixedPrice', price: 99.9, minQty: 0 }, ['A'])]).productRevenue).toBeCloseTo(349.5);
+  });
+});
+
+describe('VAT treatment', () => {
+  // 1% on the product, 20% on shipping, commission and packaging: more VAT paid than collected
+  const s1: Settings = { ...defaultState.settings, customerShippingFee: 0 };
+  it('shows a VAT credit when services carry more VAT than the sale', () => {
+    const r = calcWith(s1, { A: 1 }, []);
+    expect(r.vatOutput).toBeCloseTo(134.9 / 101);
+    expect(r.vatPayable).toBeLessThan(0);
+  });
+  it('credit counts only when it is recoverable', () => {
+    const gross = calcWith(s1, { A: 1 }, []);
+    const rec = calcWith({ ...s1, vatMode: 'recoverable' }, { A: 1 }, []);
+    const not = calcWith({ ...s1, vatMode: 'notRecoverable' }, { A: 1 }, []);
+    expect(rec.profit).toBeCloseTo(gross.cashProfit - gross.vatPayable);
+    expect(rec.profit).toBeGreaterThan(gross.profit);
+    expect(not.profit).toBeCloseTo(gross.profit);
+  });
+  it('uses the purchase VAT rate for the cost', () => {
+    const r = calcWith({ ...s1, products: s1.products.map((p) => ({ ...p, costVatRate: 20 })) }, { A: 1 }, []);
+    const base = calcWith(s1, { A: 1 }, []);
+    expect(r.vatInput - base.vatInput).toBeCloseTo(55 / 6 - 55 / 101);
   });
 });
 
@@ -116,7 +139,7 @@ describe('migration', () => {
     const s = migrateV3(v2);
     expect(s.version).toBe(3);
     expect(s.settings.products[0].cost).toBe(60);
-    expect(s.settings.deductVat).toBe(false);
+    expect(s.settings.vatMode).toBe('gross');
     expect(s.campaigns.filter((c) => c.active).map((c) => c.mechanic.type).sort()).toEqual(['buyXPayY', 'freeShipping']);
   });
 });

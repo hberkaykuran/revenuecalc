@@ -17,7 +17,7 @@ function write(key: string, value: unknown): boolean {
 /** Convert the v1/v2 campaign model: keep settings and the campaigns that were running. */
 function fromV2(raw: any): AppState {
   const s: AppState = structuredClone(defaultState);
-  if (raw.settings) s.settings = { ...s.settings, ...raw.settings, deductVat: false };
+  if (raw.settings) s.settings = { ...s.settings, ...raw.settings, vatMode: 'gross' };
   s.settings.boxes = s.settings.boxes.map((b) => ({ ...b, packagingCost: b.packagingCost ?? 10 }));
   const out: Campaign[] = [];
   const add = (mechanic: Mechanic, productIds: string[]) =>
@@ -66,7 +66,10 @@ export function migrate(raw: any): Store {
     const d = structuredClone(defaultStore);
     // Shopify only for now: other channels and their products are left out
     const shop = (raw.channels as Channel[]).find((c) => c.id === 'shopify') ?? d.channels[0];
-    const channels = [{ ...shop, settings: { ...d.channels[0].settings, ...shop.settings }, bands: {} }];
+    const settings = { ...d.channels[0].settings, ...shop.settings };
+    if (!shop.settings.vatMode) settings.vatMode = shop.settings.deductVat ? 'recoverable' : 'gross';
+    delete settings.deductVat;
+    const channels = [{ ...shop, settings, bands: {} }];
     const products = (raw.products as Store['products']).filter((p) => shop.prices[p.id] !== undefined);
     return { ...d, ...raw, products, channels, channelId: 'shopify', tariffHistory: [] };
   }
@@ -75,6 +78,7 @@ export function migrate(raw: any): Store {
   const { products, ...settings } = v3.settings;
   const prices = Object.fromEntries(products.map((p) => [p.id, p.price]));
   const fullSettings = { ...defaultStore.channels[0].settings, ...settings };
+  delete fullSettings.deductVat;
   return {
     version: 4,
     products: products.map(({ commissionBands: _b, ...p }) => p),

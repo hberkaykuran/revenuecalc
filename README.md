@@ -34,7 +34,23 @@ Any pair can be changed. When rules clash, the customer gets the combination tha
 3. The shipping fee is charged unless the product total after all discounts reaches the free-shipping threshold (or a free-shipping campaign).
 4. Commission is taken on the product total after discounts; shipping is excluded.
 5. Boxes: the smallest box that fits; above the largest box, whole large boxes. Shipping cost = tariff for the total desi + EPH + VAT, plus packaging per box.
-6. Profit = customer pays − commission − shipping − packaging − cost of goods. Prices and costs include VAT. VAT payable is shown separately and is only deducted if you switch that on.
+6. Profit = customer pays − commission − shipping − packaging − cost of goods. Prices and costs include VAT; how VAT enters profit is a setting (see VAT).
+
+## Compare
+
+Pick up to five combinations (the campaigns that are on, no campaign, or saved combinations) and see which gives the best margin or profit in each box range, at every order size, and for every mix of two products.
+
+## Monthly plan
+
+Typical orders per month (single or two-product), ad spend per order, returns and fixed costs. Shows monthly profit, margin, break-even orders and the VAT position: VAT owed, or VAT credit (devreden KDV) when products sell at a low rate (e.g. 1%) while shipping, packaging and services carry 20%.
+
+## VAT
+
+Each product has a sale VAT rate and a purchase VAT rate. Profit can leave VAT out (default), treat VAT as settled with credit recovered, or settled with credit lost.
+
+## Products
+
+"Add Mesh Stick products" adds the 32 active products from `hberkaykuran/meshstick-prod` (`catalog/products.json`) with their Shopify prices (`src/catalog.ts`). Costs start at 0.
 
 ## Ideas
 
