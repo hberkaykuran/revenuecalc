@@ -133,6 +133,8 @@ export type UiPrefs = {
   hiddenCols: Record<string, string[]>;
   openGroups: Record<string, string[]>;
   sidebar: boolean;
+  nav?: boolean; // left navigation collapsed
+  compare?: string[]; // what the Compare tab shows
 };
 
 const defaultUi = (): UiPrefs => ({

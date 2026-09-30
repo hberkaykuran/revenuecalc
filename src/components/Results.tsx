@@ -26,7 +26,6 @@ export function Results() {
     <Flex vertical gap={12}>
       <MarginSummary />
       <QuantityTable />
-      <Compare />
       <MixGrid />
     </Flex>
   );
@@ -221,44 +220,6 @@ function QuantityTable() {
       }>
       <Table size="small" bordered pagination={false} columns={columns} dataSource={rows} scroll={{ x: 'max-content', y: 520 }}
         rowClassName={(r) => `${r.delta < 0 ? 'row-loss' : ''} ${r.boxChange ? 'row-box' : ''}`} />
-    </Section>
-  );
-}
-
-function Compare() {
-  const { settings, state, calc } = useApp();
-  const [metric, setMetric] = useState<Metric>('margin');
-  const [productId, setProductId] = useState(settings.products[0]?.id ?? '');
-  const product = settings.products.find((p) => p.id === productId) ?? settings.products[0];
-  if (!product) return null;
-  const sets = [
-    { key: 'now', name: t('Campaigns that are on'), run: (cart: Cart) => calc(cart) },
-    { key: 'none', name: t('No campaign'), run: (cart: Cart) => calcOrder(settings, cart, [], {}) },
-    ...state.scenarios.map((sc) => ({ key: sc.id, name: sc.name, run: (cart: Cart) => calcOrder(settings, cart, sc.campaigns.map((c) => ({ ...c, active: true })), sc.stack) })),
-  ];
-  const qs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 18, 24];
-  const data = qs.map((q) => {
-    const rs = sets.map((s) => s.run({ [product.id]: q }));
-    const best = Math.max(...rs.map((r) => r.profit));
-    return { key: q, q, rs, best };
-  });
-  return (
-    <Section id="compare" title={t('Scenario comparison')}
-      sub={t('The same orders under your saved scenarios. The most profitable one for each quantity is marked.')}
-      extra={<Space wrap><Select size="small" value={product.id} onChange={(v: string) => setProductId(v)} style={{ width: 170 }} showSearch optionFilterProp="label" options={settings.products.map((p) => ({ value: p.id, label: p.name }))} /><MetricSwitch value={metric} onChange={setMetric} /></Space>}>
-      <Table size="small" bordered pagination={false} dataSource={data} scroll={{ x: 'max-content' }}
-        columns={[
-          { key: 'q', title: t('Qty'), dataIndex: 'q', fixed: 'left', width: 56 },
-          ...sets.map((s, i) => ({
-            key: s.key, title: s.name, align: 'right' as const,
-            render: (_: unknown, row: (typeof data)[number]) => (
-              <Flex justify="flex-end" gap={6} align="center">
-                {Math.abs(row.rs[i].profit - row.best) < 0.005 && sets.length > 1 && <Tag color="green">{t('best')}</Tag>}
-                <Cell r={row.rs[i]} metric={metric} />
-              </Flex>
-            ),
-          })),
-        ]} />
     </Section>
   );
 }

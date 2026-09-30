@@ -1,4 +1,4 @@
-import { CopyOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
+import { CopyOutlined, DeleteOutlined, EditOutlined, MenuUnfoldOutlined, PlusOutlined } from '@ant-design/icons';
 import { Button, Card, Checkbox, Collapse, Empty, Flex, Input, List, Popconfirm, Space, Switch, Table, Tag, Tooltip, Typography } from 'antd';
 import { useState } from 'react';
 import { useApp } from '../context';
@@ -8,7 +8,7 @@ import { TYPE_LABELS } from '../labels';
 import type { Campaign, Mechanic } from '../types';
 import { MechanicEditor } from './MechanicEditor';
 
-export function CampaignSidebar() {
+export function CampaignSidebar({ onHide }: { onHide?: () => void }) {
   const { state, setState, label } = useApp();
   const products = state.settings.products;
   const [draft, setDraft] = useState<{ mechanic: Mechanic; productIds: string[] } | null>(null);
@@ -20,7 +20,12 @@ export function CampaignSidebar() {
   return (
     <Flex vertical gap={12}>
       <Card size="small" title={<>{t('Campaigns')} <Tag color={active.length ? 'blue' : undefined}>{t('{n} on', { n: active.length })}</Tag></>}
-        extra={!draft && <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => setDraft({ mechanic: defaultMechanic('percentOff'), productIds: [] })}>{t('Add')}</Button>}>
+        extra={
+          <Space size={4}>
+            {!draft && <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => setDraft({ mechanic: defaultMechanic('percentOff'), productIds: [] })}>{t('Add')}</Button>}
+            {onHide && <Tooltip title={t('Hide campaigns')}><Button type="text" size="small" icon={<MenuUnfoldOutlined />} aria-label={t('Hide campaigns')} onClick={onHide} /></Tooltip>}
+          </Space>
+        }>
         {draft && (
           <Card size="small" type="inner" title={t('New campaign')} style={{ marginBottom: 12 }}>
             <MechanicEditor idPrefix="draft" mechanic={draft.mechanic} productIds={draft.productIds} products={products}
