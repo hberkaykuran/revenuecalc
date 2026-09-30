@@ -152,6 +152,7 @@ export type Store = {
   channels: Channel[];
   channelId: string;
   tariffHistory: TariffSnapshot[];
+  fixes?: string[]; // one-time data corrections already applied
 };
 
 export type Cart = Record<string, number>;

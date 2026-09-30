@@ -2,7 +2,7 @@ import { DeleteOutlined, DownloadOutlined, PlusOutlined, UploadOutlined } from '
 import { Alert, Button, Card, Checkbox, Col, Flex, Input, Popconfirm, Radio, Row, Select, Space, Table, Typography, Upload } from 'antd';
 import { useState } from 'react';
 import { useApp } from '../context';
-import { MESH_STICK_CATALOG } from '../catalog';
+import { catalogSize, MESH_STICK_CATALOG } from '../catalog';
 import { defaultStore } from '../defaults';
 import { pct, t, uid } from '../i18n';
 import { migrate } from '../store';
@@ -22,11 +22,14 @@ export function ProductsCosts() {
     <Flex vertical gap={12}>
       <Card size="small" title={t('Products')} extra={
         <Space wrap>
-          <Popconfirm title={t('Add the {n} Mesh Stick products with their Shopify prices?', { n: MESH_STICK_CATALOG.length })} description={t('Products you already have (same SKU) are skipped. Costs start at 0.')}
+          <Popconfirm title={t('Add the {n} Mesh Stick products with their Shopify prices?', { n: MESH_STICK_CATALOG.length })} description={t('Products you already have (same SKU) are kept; only their box size is filled in if it is still 1. Costs start at 0.')}
             okText={t('Add')} cancelText={t('Cancel')} onConfirm={() => {
+              const bySku = new Map(MESH_STICK_CATALOG.map((c) => [c.sku, c]));
               const have = new Set(s.products.map((p) => p.sku).filter(Boolean));
-              const add = MESH_STICK_CATALOG.filter((c) => !have.has(c.sku)).map((c) => ({ id: uid(), sku: c.sku, barcode: c.barcode, name: c.name, cost: 0, price: c.price, vatRate: 1, sizeUnits: 1 }));
-              set({ products: [...s.products, ...add] });
+              // products added before sizes were known keep everything but get their box size
+              const kept = s.products.map((p) => { const c = p.sku ? bySku.get(p.sku) : undefined; return c && p.sizeUnits === 1 ? { ...p, sizeUnits: catalogSize(c) } : p; });
+              const add = MESH_STICK_CATALOG.filter((c) => !have.has(c.sku)).map((c) => ({ id: uid(), sku: c.sku, barcode: c.barcode, name: c.name, cost: 0, price: c.price, vatRate: 1, sizeUnits: catalogSize(c) }));
+              set({ products: [...kept, ...add] });
             }}>
             <Button size="small">{t('Add Mesh Stick products')}</Button>
           </Popconfirm>
@@ -87,7 +90,7 @@ export function ProductsCosts() {
                 ['orderFee', 'Fee per order', 'TL', 'Fixed platform fee per order, VAT included'],
                 ['ephRate', 'EPH', '%', 'Added to the shipping tariff'],
                 ['shippingVatRate', 'Shipping VAT', '%', 'Added to the shipping tariff'],
-                ['commissionVatRate', 'VAT inside commission', '%', 'Only for the separate VAT figure; profit does not change'],
+                ['commissionVatRate', 'VAT inside commission', '%', 'Shopify invoices from abroad without Turkish VAT, so 0. Only for the separate VAT figure.'],
                 ['packagingVatRate', 'VAT inside packaging', '%', 'Only for the separate VAT figure; profit does not change'],
               ] as const).map(([k, label, unit, hint]) => (
                 <Col key={k} xs={12} md={8}>

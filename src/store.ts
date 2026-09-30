@@ -60,6 +60,21 @@ export function migrateV3(raw: any): AppState {
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
+/**
+ * One-time corrections to saved data, each applied once:
+ * - shopify-commission-vat: the owner confirmed Shopify takes the commission and invoices from
+ *   abroad without Turkish VAT, so the old 20% default becomes 0 (a value someone changed stays).
+ */
+function applyFixes(s: Store): Store {
+  const done = new Set(s.fixes ?? []);
+  let channels = s.channels;
+  if (!done.has('shopify-commission-vat')) {
+    channels = channels.map((c) => (c.id === 'shopify' && c.settings.commissionVatRate === 20 ? { ...c, settings: { ...c.settings, commissionVatRate: 0 } } : c));
+    done.add('shopify-commission-vat');
+  }
+  return { ...s, channels, fixes: [...done] };
+}
+
 /** Any saved data (v1–v4, or a v3 export) as a v4 store. */
 export function migrate(raw: any): Store {
   if (raw?.version === 4 && Array.isArray(raw.channels)) {
@@ -71,7 +86,7 @@ export function migrate(raw: any): Store {
     delete settings.deductVat;
     const channels = [{ ...shop, settings, bands: {} }];
     const products = (raw.products as Store['products']).filter((p) => shop.prices[p.id] !== undefined);
-    return { ...d, ...raw, products, channels, channelId: 'shopify', tariffHistory: [] };
+    return applyFixes({ ...d, ...raw, products, channels, channelId: 'shopify', tariffHistory: [] });
   }
   if (!raw || typeof raw !== 'object' || !raw.settings) return structuredClone(defaultStore);
   const v3 = migrateV3(raw);
@@ -79,7 +94,7 @@ export function migrate(raw: any): Store {
   const prices = Object.fromEntries(products.map((p) => [p.id, p.price]));
   const fullSettings = { ...defaultStore.channels[0].settings, ...settings };
   delete fullSettings.deductVat;
-  return {
+  return applyFixes({
     version: 4,
     products: products.map(({ commissionBands: _b, ...p }) => p),
     channels: [
@@ -87,7 +102,7 @@ export function migrate(raw: any): Store {
     ],
     channelId: 'shopify',
     tariffHistory: [],
-  };
+  });
 }
 
 export const activeChannel = (s: Store) => s.channels.find((c) => c.id === s.channelId) ?? s.channels[0];

@@ -423,4 +423,6 @@ export const tr: Record<string, string> = {
   "no fixed costs": "sabit maliyet yok",
   "never": "yok",
   "No second product": "İkinci ürün yok",
+  "Products you already have (same SKU) are kept; only their box size is filled in if it is still 1. Costs start at 0.": "Zaten olan ürünler (aynı SKU) korunur; kutu yeri hâlâ 1 ise yalnızca o güncellenir. Maliyetler 0 olarak başlar.",
+  "Shopify invoices from abroad without Turkish VAT, so 0. Only for the separate VAT figure.": "Shopify yurt dışından Türk KDV'si olmadan faturalar, bu yüzden 0. Yalnızca ayrı gösterilen KDV hesabı için.",
 };

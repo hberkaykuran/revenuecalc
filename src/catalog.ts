@@ -3,7 +3,18 @@
  * (active products; price is what the shopper pays, the sale price where there is one).
  * Costs are not in that repo, so they start at 0.
  */
-export type CatalogItem = { sku: string; name: string; family: string; price: number; compareAt?: number; barcode?: string };
+export type CatalogItem = { sku: string; name: string; family: string; price: number; compareAt?: number; barcode?: string; sizeUnits?: number };
+
+/**
+ * Box slots per unit; a 16-stick tea box is 1 slot and a small box holds 3.
+ * Matcha: 4 fit a small box comfortably (5 at most), so 0.75. A capsule pack is about half a tea box.
+ */
+export function catalogSize(c: CatalogItem): number {
+  if (c.sizeUnits) return c.sizeUnits;
+  if (c.sku.startsWith('MESH-MATCHA-KAP')) return 0.5;
+  if (c.sku.startsWith('MESH-MATCHA')) return 0.75;
+  return 1;
+}
 
 export const MESH_STICK_CATALOG: CatalogItem[] = [
   { sku: "MESH-KARMABITKICAYI", name: "Karma Bitki Çayı", family: "Bitki Çayı", price: 149.9 },

@@ -160,7 +160,28 @@ describe('commission bands', () => {
   });
 });
 
+describe('Mesh Stick catalog', () => {
+  it('sizes matcha for the box', async () => {
+    const { MESH_STICK_CATALOG, catalogSize } = await import('./catalog');
+    const size = (sku: string) => catalogSize(MESH_STICK_CATALOG.find((c) => c.sku === sku)!);
+    expect(size('MESH-MATCHA-SAF')).toBe(0.75);
+    expect(size('MESH-MATCHA-KAP-SAF')).toBe(0.5);
+    expect(size('MESH-YESILCAY')).toBe(1);
+    // 4 matcha fit the small box, a 5th needs the medium one
+    expect(packBoxes(4 * 0.75, s0.boxes)[0].id).toBe('small');
+    expect(packBoxes(5 * 0.75, s0.boxes)[0].id).toBe('medium');
+  });
+});
+
 describe('store', () => {
+  it('switches the old 20% commission VAT to 0 once', () => {
+    const base = migrate(null);
+    const old = { ...base, fixes: undefined, channels: base.channels.map((c) => ({ ...c, settings: { ...c.settings, commissionVatRate: 20 } })) };
+    const s = migrate(old);
+    expect(s.channels[0].settings.commissionVatRate).toBe(0);
+    const edited = { ...s, channels: s.channels.map((c) => ({ ...c, settings: { ...c.settings, commissionVatRate: 20 } })) };
+    expect(migrate(edited).channels[0].settings.commissionVatRate).toBe(20); // a later choice stays
+  });
   it('migrates a v3 store into the Shopify channel', () => {
     const s = migrate({ ...defaultState, settings: { ...defaultState.settings, products: [{ id: 'A', name: 'A', cost: 60, price: 140, vatRate: 20, sizeUnits: 1 }] } });
     expect(s.version).toBe(4);

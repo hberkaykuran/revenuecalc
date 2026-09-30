@@ -25,7 +25,7 @@ export const defaultState: AppState = {
     ephRate: 2.35,
     packagingVatRate: 20,
     commissionRate: 4.7,
-    commissionVatRate: 20,
+    commissionVatRate: 0, // Shopify invoices from abroad: no Turkish VAT inside the commission
     customerShippingFee: 100,
     orderFee: 0,
     freeShippingThreshold: 750,
@@ -57,4 +57,5 @@ export const defaultStore: Store = {
   ],
   channelId: 'shopify',
   tariffHistory: [],
+  fixes: ['shopify-commission-vat'],
 };
