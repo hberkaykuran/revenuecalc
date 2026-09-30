@@ -1,5 +1,7 @@
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
-import { Alert, Button, Card, Col, Flex, Input, Row, Select, Space, Statistic, Table, Typography } from 'antd';
+import { Alert, Button, Card, Col, Flex, Input, Popover, Row, Select, Space, Statistic, Table, Typography } from 'antd';
+import { useState } from 'react';
+import { ORDER_MIXES } from '../orderMix';
 import { useApp } from '../context';
 import { pct, t, tl, tl0, uid } from '../i18n';
 import { defaultPlan, month } from '../monthly';
@@ -38,7 +40,12 @@ export function Monthly() {
 
       <Section id="m-orders" title={t('Typical orders')}
         sub={t('What a normal month looks like: each row is a kind of order and how many of them you get. Rows can mix two products.')}
-        extra={<Button size="small" icon={<PlusOutlined />} onClick={() => setPlan({ orders: [...plan.orders, { id: uid(), lines: [{ productId: ps[0]?.id ?? '', qty: 1 }], perMonth: 10 }] })}>{t('Add row')}</Button>}>
+        extra={
+          <Space>
+            <FillFromMix onFill={(rows) => setPlan({ orders: rows })} />
+            <Button size="small" icon={<PlusOutlined />} onClick={() => setPlan({ orders: [...plan.orders, { id: uid(), lines: [{ productId: ps[0]?.id ?? '', qty: 1 }], perMonth: 10 }] })}>{t('Add row')}</Button>
+          </Space>
+        }>
         <Table size="small" rowKey="id" pagination={false} scroll={{ x: 'max-content' }} dataSource={plan.orders}
           columns={[
             { key: 'p1', title: t('Product'), render: (_, o) => (
@@ -120,5 +127,34 @@ export function Monthly() {
         </Col>
       </Row>
     </Flex>
+  );
+}
+
+/** Replace the rows with real order sizes, all as one representative product. */
+function FillFromMix({ onFill }: { onFill: (rows: MonthlyPlan['orders']) => void }) {
+  const { settings } = useApp();
+  const ps = settings.products;
+  const [open, setOpen] = useState(false);
+  const [mixId, setMixId] = useState(ORDER_MIXES[0].id);
+  const [pid, setPid] = useState<string | undefined>(ps.find((p) => Math.abs(p.price - 149.9) < 0.01)?.id ?? ps[0]?.id);
+  const [scale, setScale] = useState(100);
+  const mix = ORDER_MIXES.find((m) => m.id === mixId)!;
+  return (
+    <Popover open={open} onOpenChange={setOpen} trigger="click" placement="bottomRight" title={t('Fill from order sizes')}
+      content={
+        <Flex vertical gap={8} style={{ width: 320 }}>
+          <Select value={mixId} onChange={setMixId} options={ORDER_MIXES.map((m) => ({ value: m.id, label: t(m.name) }))} />
+          <Typography.Text className="tiny">{t('Product to stand for every box')}</Typography.Text>
+          <Select value={pid} onChange={setPid} showSearch optionFilterProp="label" options={ps.map((p) => ({ value: p.id, label: `${p.name} · ${p.price}` }))} />
+          <Space><Typography.Text className="tiny">{t('Scale')}</Typography.Text><Num id="mix-scale" value={scale} min={1} suffix="%" width={100} onChange={setScale} /></Space>
+          <Typography.Text type="secondary" className="tiny">{t('Replaces the rows below: one row per order size with that many boxes of the chosen product. Scale 100% keeps the real order counts.')}</Typography.Text>
+          <Button type="primary" disabled={!pid} onClick={() => {
+            onFill(Object.entries(mix.orders).map(([k, v]) => ({ id: uid(), lines: [{ productId: pid!, qty: Number(k) }], perMonth: Math.round(v * scale) / 100 })));
+            setOpen(false);
+          }}>{t('Fill')}</Button>
+        </Flex>
+      }>
+      <Button size="small">{t('Fill from order sizes')}</Button>
+    </Popover>
   );
 }

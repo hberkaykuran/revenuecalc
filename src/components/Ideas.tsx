@@ -6,6 +6,7 @@ import { freeShipQty, notes, strategyIdeas, type Goal, type Idea, type StrategyI
 import { Num, Section } from './common';
 import { boxText } from './Results';
 import { calcWith } from '../engine';
+import { mixShares, ORDER_MIXES } from '../orderMix';
 
 const GOALS: { id: Goal; title: string; aim: string; why: string }[] = [
   { id: 'basket', title: 'Bigger baskets',
@@ -29,7 +30,7 @@ export function Ideas() {
   const ps = settings.products;
   const [inp, setInp] = useState<StrategyInput>({
     goal: 'basket', productId: ps[0]?.id ?? '', otherProductId: ps[1]?.id ?? ps[0]?.id ?? '',
-    mix: [55, 20, 12, 6, 4, 3], goalQty: 3, minMargin: 20, minSaving: 5, maxSaving: 35, response: 20, combos: true,
+    mix: mixShares(ORDER_MIXES[0]), goalQty: 3, minMargin: 20, minSaving: 5, maxSaving: 35, response: 20, combos: true,
   });
   const [sortBy, setSortBy] = useState<SortBy>('breakEven');
   const [limit, setLimit] = useState(15);

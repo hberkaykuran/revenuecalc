@@ -444,4 +444,10 @@ export const tr: Record<string, string> = {
   "Mix & match: buy X pay Y": "Karışık X al Y öde",
   "Buy any": "Toplam al",
   "From pieces": "En az adet",
+  "Trendyol, September 2026 (572 orders)": "Trendyol, Eylül 2026 (572 sipariş)",
+  "Product to stand for every box": "Her kutu yerine geçecek ürün",
+  "Scale": "Ölçek",
+  "Replaces the rows below: one row per order size with that many boxes of the chosen product. Scale 100% keeps the real order counts.": "Aşağıdaki satırların yerine geçer: her sipariş adedi için, seçilen üründen o kadar kutu içeren bir satır. %100 ölçek gerçek sipariş sayılarını korur.",
+  "Fill from order sizes": "Sipariş adetlerinden doldur",
+  "Fill": "Doldur",
 };

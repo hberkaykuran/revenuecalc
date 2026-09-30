@@ -24,3 +24,12 @@ describe('monthly plan', () => {
     expect(m.vatInput).toBeCloseTo(100 * one.vatInput + 5000 / 6 + 400 / 6);
   });
 });
+
+describe('real order sizes', () => {
+  it('turns September counts into shares for 1…5 and 6+', async () => {
+    const { mixShares, ORDER_MIXES } = await import('./orderMix');
+    const m = ORDER_MIXES[0];
+    expect(Object.values(m.orders).reduce((a, b) => a + b, 0)).toBe(572);
+    expect(mixShares(m)).toEqual([26, 32.2, 10.8, 14.7, 3.8, 12.4]);
+  });
+});
