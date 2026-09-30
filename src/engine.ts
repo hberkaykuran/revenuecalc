@@ -1,4 +1,4 @@
-import type { Box, Campaign, Cart, Mechanic, MechanicType, Product, Settings, StackRules, TariffRow } from './types';
+import type { Box, Campaign, Cart, CommissionBand, Mechanic, MechanicType, Product, Settings, StackRules, TariffRow } from './types';
 
 const EPS = 1e-9;
 
@@ -158,7 +158,15 @@ export function combinations(cs: Campaign[], rules: StackRules): Campaign[][] {
 
 // ---------- order ----------
 
-export type LineResult = { productId: string; name: string; qty: number; list: number; afterCampaign: number; afterCart: number; cogs: number; vatRate: number };
+export type LineResult = { productId: string; name: string; qty: number; list: number; afterCampaign: number; afterCart: number; cogs: number; vatRate: number; commissionRate: number };
+
+/** Commission rate for a unit price: the matching band, else the flat rate. */
+export function commissionRate(unitPrice: number, bands: CommissionBand[] | undefined, flat: number): number {
+  if (!bands?.length) return flat;
+  const p = Math.round(unitPrice * 100) / 100;
+  const b = bands.find((x) => (x.min === null || p >= x.min - 1e-9) && (x.max === null || p <= x.max + 1e-9));
+  return b ? b.rate : flat;
+}
 
 export type OrderResult = {
   qty: number;
@@ -177,6 +185,7 @@ export type OrderResult = {
   shippingTariff: number;
   shippingCost: number;
   packaging: number;
+  orderFee: number;
   cogs: number;
   costs: number; // commission + shipping + packaging + goods
   cashProfit: number;
@@ -208,7 +217,8 @@ export function calcWith(settings: Settings, cart: Cart, cs: Campaign[]): OrderR
       // record which campaigns actually moved the price
       for (const c of mine) if (lineTotal(qty, p.price, [c.mechanic]) < list - 0.005) touched.add(c.id);
     }
-    lines.push({ productId: p.id, name: p.name, qty, list, afterCampaign: after, afterCart: after, cogs: qty * p.cost, vatRate: p.vatRate });
+    const rate = commissionRate(after / qty, p.commissionBands, settings.commissionRate);
+    lines.push({ productId: p.id, name: p.name, qty, list, afterCampaign: after, afterCart: after, cogs: qty * p.cost, vatRate: p.vatRate, commissionRate: rate });
   }
   const qty = lines.reduce((s, l) => s + l.qty, 0);
   const list = lines.reduce((s, l) => s + l.list, 0);
@@ -240,7 +250,8 @@ export function calcWith(settings: Settings, cart: Cart, cs: Campaign[]): OrderR
   }
   const shippingCharged = qty > 0 && !freeShipping ? settings.customerShippingFee : 0;
   const customerPays = productRevenue + shippingCharged;
-  const commission = productRevenue * settings.commissionRate / 100;
+  // the band is picked on the unit price the customer sees; commission is taken after cart discounts
+  const commission = lines.reduce((sum, l) => sum + l.afterCart * l.commissionRate / 100, 0);
 
   const slots = settings.products.reduce((s, p) => s + (cart[p.id] ?? 0) * p.sizeUnits, 0);
   const boxes = packBoxes(slots, settings.boxes, settings.overflowRemainderBestFit);
@@ -250,13 +261,14 @@ export function calcWith(settings: Settings, cart: Cart, cs: Campaign[]): OrderR
   const shippingCost = shippingNet * (1 + settings.shippingVatRate / 100);
   const packaging = boxes.reduce((s, b) => s + (b.packagingCost ?? 0), 0);
   const cogs = lines.reduce((s, l) => s + l.cogs, 0);
-  const costs = commission + shippingCost + packaging + cogs;
+  const orderFee = qty > 0 ? settings.orderFee ?? 0 : 0;
+  const costs = commission + orderFee + shippingCost + packaging + cogs;
   const cashProfit = customerPays - costs;
 
   const vatOutput = lines.reduce((s, l) => s + vatPart(l.afterCart, l.vatRate), 0) + vatPart(shippingCharged, settings.shippingVatRate);
   const vatInput = lines.reduce((s, l) => s + vatPart(l.cogs, l.vatRate), 0)
     + shippingNet * settings.shippingVatRate / 100
-    + vatPart(commission, settings.commissionVatRate)
+    + vatPart(commission + orderFee, settings.commissionVatRate)
     + vatPart(packaging, settings.packagingVatRate);
   const vatPayable = vatOutput - vatInput;
   const profit = settings.deductVat ? cashProfit - vatPayable : cashProfit;
@@ -264,7 +276,7 @@ export function calcWith(settings: Settings, cart: Cart, cs: Campaign[]): OrderR
   return {
     qty, lines, list, campaignDiscount: list - subtotal, subtotal, cartDiscount, productRevenue,
     shippingCharged, freeShipping, customerPays, commission, boxes, desi, shippingTariff, shippingCost,
-    packaging, cogs, costs, cashProfit, vatOutput, vatInput, vatPayable, profit,
+    packaging, orderFee, cogs, costs, cashProfit, vatOutput, vatInput, vatPayable, profit,
     margin: customerPays > 0 ? profit / customerPays : 0,
     totalDiscount: list - productRevenue,
     applied: cs.filter((c) => touched.has(c.id)),

@@ -1,12 +1,14 @@
 import { createContext, useContext } from 'react';
 import type { OrderResult } from './engine';
 import type { UiPrefs } from './store';
-import type { AppState, Campaign, Cart, Settings } from './types';
+import type { AppState, Campaign, Cart, Settings, Store } from './types';
 
 export type WhatIf = { prices: Record<string, number | undefined> };
 
 export type AppCtx = {
-  state: AppState;
+  store: Store;
+  setStore: (f: (s: Store) => Store) => void;
+  state: AppState; // the active channel
   setState: (f: (s: AppState) => AppState) => void;
   ui: UiPrefs;
   setUi: (f: (u: UiPrefs) => UiPrefs) => void;

@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Col, Flex, InputNumber, Radio, Row, Segmented, Select, Space, Switch, Table, Tag, Tooltip, Typography } from 'antd';
+import { Alert, Button, Card, Col, Flex, InputNumber, Radio, Row, Select, Space, Switch, Table, Tag, Tooltip, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 import { useApp } from '../context';
 import { pct, pctOf, t, tl, uid } from '../i18n';
@@ -99,7 +99,7 @@ export function Ideas() {
         sub={t('How orders of this product split by quantity today. Guess if you are not sure; the ranking holds up well.')}>
         <Flex wrap gap={16} align="end">
           <Space direction="vertical" size={2}><Typography.Text className="tiny">{t('Product')}</Typography.Text>
-            <Segmented value={product.id} onChange={(v) => set({ productId: v as string })} options={ps.map((p) => ({ value: p.id, label: p.name }))} /></Space>
+            <Select value={product.id} onChange={(v: string) => set({ productId: v })} style={{ width: 200 }} showSearch optionFilterProp="label" options={ps.map((p) => ({ value: p.id, label: p.name }))} /></Space>
           <Space direction="vertical" size={2}><Typography.Text className="tiny">{t('Share of orders by quantity')}</Typography.Text>
             <Space.Compact>
               {inp.mix.map((v, i) => (
@@ -121,7 +121,7 @@ export function Ideas() {
           {inp.goal === 'freeShipping' && <Typography.Text>{t('Free shipping starts at {q} pcs ({x} TL).', { q: fq, x: tl(fq * product.price) })}</Typography.Text>}
           {inp.goal === 'crossSell' && other && (
             <Space direction="vertical" size={2}><Typography.Text className="tiny">{t('Add-on product')}</Typography.Text>
-              <Select value={other.id} onChange={(v) => set({ otherProductId: v })} style={{ width: 120 }} options={ps.filter((p) => p.id !== product.id).map((p) => ({ value: p.id, label: p.name }))} /></Space>
+              <Select value={other.id} onChange={(v) => set({ otherProductId: v })} style={{ width: 200 }} showSearch optionFilterProp="label" options={ps.filter((p) => p.id !== product.id).map((p) => ({ value: p.id, label: p.name }))} /></Space>
           )}
         </Flex>
       </Section>

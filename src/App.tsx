@@ -14,10 +14,11 @@ import { Ctx, type AppCtx, type WhatIf as WhatIfState } from './context';
 import { calcOrder } from './engine';
 import { setLang, t } from './i18n';
 import { campaignLabel } from './labels';
-import { useAppState, useUiPrefs } from './store';
-import type { Campaign, Cart } from './types';
+import { fromView, toView, useStore, useUiPrefs } from './store';
+import type { AppState, Campaign, Cart } from './types';
+import { Trendyol } from './components/Trendyol';
 
-type TabId = 'results' | 'order' | 'lab' | 'ideas' | 'costs';
+type TabId = 'results' | 'order' | 'lab' | 'ideas' | 'trendyol' | 'costs';
 const WITH_CAMPAIGNS: TabId[] = ['results', 'order', 'lab'];
 
 function useDarkMode() {
@@ -33,10 +34,12 @@ function useDarkMode() {
 }
 
 export function App() {
-  const [state, setState, saveStatus] = useAppState();
+  const [store, setStore, saveStatus] = useStore();
+  const state = useMemo(() => toView(store), [store]);
+  const setState = useCallback((f: (s: AppState) => AppState) => setStore((st) => fromView(st, f(toView(st)))), [setStore]);
   const [ui, setUi] = useUiPrefs();
   const [whatIf, setWhatIf] = useState<WhatIfState>({ prices: {} });
-  const [tab, setTab] = useState<TabId>(() => (['results', 'order', 'lab', 'ideas', 'costs'].includes(location.hash.slice(1)) ? location.hash.slice(1) as TabId : 'results'));
+  const [tab, setTab] = useState<TabId>(() => (['results', 'order', 'lab', 'ideas', 'trendyol', 'costs'].includes(location.hash.slice(1)) ? location.hash.slice(1) as TabId : 'results'));
   const [drawer, setDrawer] = useState(false);
   const screens = Grid.useBreakpoint();
   const dark = useDarkMode();
@@ -55,13 +58,13 @@ export function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const label = useCallback((c: Campaign) => campaignLabel(c, state.settings.products), [state.settings.products, ui.lang]);
 
-  const ctx: AppCtx = { state, setState, ui, setUi, settings, baseSettings: state.settings, whatIf, setWhatIf, whatIfOn, calc, calcBase, label };
+  const ctx: AppCtx = { store, setStore, state, setState, ui, setUi, settings, baseSettings: state.settings, whatIf, setWhatIf, whatIfOn, calc, calcBase, label };
   const activeCount = state.campaigns.filter((c) => c.active).length;
   const showSide = WITH_CAMPAIGNS.includes(tab);
   const wide = !!screens.lg;
 
   const content = {
-    results: <Results />, order: <OrderView />, lab: <Lab />, ideas: <Ideas />, costs: <ProductsCosts />,
+    results: <Results />, order: <OrderView />, lab: <Lab />, ideas: <Ideas />, trendyol: <Trendyol />, costs: <ProductsCosts />,
   }[tab];
 
   return (
@@ -71,7 +74,11 @@ export function App() {
           <Layout className="layout">
             <Layout.Header className="header" style={{ background: dark ? '#141414' : token.colorBgContainer, borderBottom: `1px solid ${dark ? '#303030' : token.colorBorderSecondary}` }}>
               <Flex justify="space-between" align="center" wrap gap={8} style={{ width: '100%' }}>
-                <Typography.Title level={4} style={{ margin: 0 }}>{t('Revenue calculator')}</Typography.Title>
+                <Flex gap={12} align="center" wrap>
+                  <Typography.Title level={4} style={{ margin: 0 }}>{t('Revenue calculator')}</Typography.Title>
+                  <Segmented value={store.channelId} onChange={(v) => { setWhatIf({ prices: {} }); setStore((s) => ({ ...s, channelId: v as string })); }}
+                    options={store.channels.map((c) => ({ value: c.id, label: c.name }))} aria-label={t('Sales channel')} />
+                </Flex>
                 <Flex gap={8} align="center">
                   {saveStatus === 'saved'
                     ? <Tag icon={<CheckCircleOutlined />} color="success">{t('Saved in this browser')}</Tag>
@@ -90,6 +97,7 @@ export function App() {
                   { key: 'order', label: t('Order calculator') },
                   { key: 'lab', label: t('Campaign lab') },
                   { key: 'ideas', label: t('Ideas') },
+                  { key: 'trendyol', label: t('Trendyol tariffs') },
                   { key: 'costs', label: t('Products & costs') },
                 ]} />
               {showSide && <div style={{ marginBottom: 12 }}><WhatIf /></div>}

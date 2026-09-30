@@ -1,24 +1,35 @@
 import { PlusOutlined } from '@ant-design/icons';
-import { Button, Checkbox, Flex, Input, Segmented, Select, Space, Switch, Table, Typography } from 'antd';
+import { Button, Checkbox, Flex, Input, Select, Space, Switch, Table, Tooltip, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 import { useApp } from '../context';
 import { calcOrder, calcWith, CART_MECHANICS, defaultMechanic, isCart, PARAMS, PRODUCT_MECHANICS, type OrderResult } from '../engine';
-import { num, pct, t, tl, uid } from '../i18n';
+import { pct, t, tl, uid } from '../i18n';
 import { mechanicLabel, TYPE_LABELS } from '../labels';
 import type { Campaign, Mechanic, MechanicType } from '../types';
 import { Num, Section } from './common';
 
 const parseQtys = (s: string) => [...new Set(s.split(/[\s,;]+/).map((x) => parseInt(x, 10)).filter((n) => n > 0 && n <= 500))].sort((a, b) => a - b);
 
-function ResultCell({ r, base, metric }: { r: OrderResult; base: OrderResult; metric: 'margin' | 'profit' }) {
-  const d = r.profit - base.profit;
+/** Margin first; profit change against no campaign underneath; everything else on hover. */
+function ResultCell({ r, base }: { r: OrderResult; base?: OrderResult }) {
+  const d = base ? r.profit - base.profit : 0;
   const saved = r.list > 0 ? 1 - r.productRevenue / r.list : 0;
+  const tip = (
+    <div className="tiny">
+      <div>{t('Customer pays')}: <b>{tl(r.customerPays)}</b>{saved > 0.0005 ? ` (${t('saves {p}', { p: pct(saved) })})` : ''}</div>
+      <div>{t('Total costs')}: {tl(r.costs)}</div>
+      <div>{t('Profit')}: <b>{tl(r.profit)}</b></div>
+    </div>
+  );
   return (
-    <Flex vertical align="flex-end">
-      <Typography.Text strong type={r.profit < 0 ? 'danger' : undefined}>{metric === 'margin' ? pct(r.margin) : tl(r.profit)}</Typography.Text>
-      <Typography.Text className="tiny" type={d > 0.005 ? 'success' : d < -0.005 ? 'danger' : 'secondary'}>{Math.abs(d) > 0.005 ? `${d > 0 ? '+' : '−'}${tl(Math.abs(d))}` : '±0'}</Typography.Text>
-      {saved > 0.0005 && <Typography.Text className="tiny" type="secondary">{t('saves {p}', { p: pct(saved) })}</Typography.Text>}
-    </Flex>
+    <Tooltip title={tip}>
+      <Flex vertical align="flex-end" className="cell-hover">
+        <Typography.Text strong type={r.profit < 0 ? 'danger' : undefined}>{pct(r.margin)}</Typography.Text>
+        {base
+          ? <Typography.Text className="tiny" type={d > 0.005 ? 'success' : d < -0.005 ? 'danger' : 'secondary'}>{Math.abs(d) > 0.005 ? `${d > 0 ? '+' : '−'}${tl(Math.abs(d))} TL` : '±0'}</Typography.Text>
+          : <Typography.Text className="tiny" type="secondary">{tl(r.profit)} TL</Typography.Text>}
+      </Flex>
+    </Tooltip>
   );
 }
 
@@ -47,7 +58,6 @@ function Sweep() {
   const [step, setStep] = useState(5);
   const [qtyText, setQtyText] = useState('1, 2, 3, 4, 6, 12');
   const [withActive, setWithActive] = useState(false);
-  const [metric, setMetric] = useState<'margin' | 'profit'>('margin');
   const qtys = parseQtys(qtyText);
 
   const chooseType = (tp: MechanicType) => {
@@ -71,16 +81,18 @@ function Sweep() {
   const active = state.campaigns.filter((c) => c.active);
   const run = (cs: Campaign[], q: number) => withActive ? calcOrder(settings, cartOf(q), [...active, ...cs], state.stack) : calcWith(settings, cartOf(q), cs);
   const baseRow = qtys.map((q) => run([], q));
-  const rows = values.map((v) => {
-    const m = key ? ({ ...base, [key]: v } as Mechanic) : base;
-    const c: Campaign = { id: 'sweep', name: '', mechanic: m, productIds: scope, active: true };
-    return { key: v, v, m, results: qtys.map((q) => run([c], q)) };
-  });
+  const rows: { key: string; m: Mechanic | null; results: OrderResult[] }[] = [
+    { key: 'none', m: null, results: baseRow },
+    ...values.map((v) => {
+      const m = key ? ({ ...base, [key]: v } as Mechanic) : base;
+      const c: Campaign = { id: 'sweep', name: '', mechanic: m, productIds: scope, active: true };
+      return { key: String(v), m, results: qtys.map((q) => run([c], q)) };
+    }),
+  ];
 
   return (
     <Section id="sweep" title={t('Try a range')}
-      sub={t('Pick a campaign type and one of its numbers, and see every value side by side. The small figures are the change in profit against no campaign, and what the customer saves.')}
-      extra={<Segmented size="small" value={metric} onChange={(v) => setMetric(v as 'margin' | 'profit')} options={[{ value: 'margin', label: t('Margin') }, { value: 'profit', label: t('Profit') }]} />}>
+      sub={t('Pick a campaign type and one of its numbers to see the margin for every value. Below each margin is the profit change against no campaign; hover a cell for the details.')}>
       <Flex wrap gap={12} align="end" style={{ marginBottom: 12 }}>
         <Space direction="vertical" size={2}><Typography.Text className="tiny">{t('Type')}</Typography.Text>
           <Select id="sw-type" value={type} onChange={chooseType} style={{ width: 200 }} options={[
@@ -88,7 +100,7 @@ function Sweep() {
             { label: t('Cart campaigns'), options: CART_MECHANICS.filter((x) => PARAMS[x].length).map((x) => ({ value: x, label: t(TYPE_LABELS[x]) })) },
           ]} /></Space>
         <Space direction="vertical" size={2}><Typography.Text className="tiny">{t('Product')}</Typography.Text>
-          <Segmented value={product.id} onChange={(v) => setProductId(v as string)} options={products.map((p) => ({ value: p.id, label: p.name }))} /></Space>
+          <Select id="sw-product" value={product.id} onChange={setProductId} style={{ width: 180 }} showSearch optionFilterProp="label" options={products.map((p) => ({ value: p.id, label: p.name }))} /></Space>
         <Space direction="vertical" size={2}><Typography.Text className="tiny">{t('Change')}</Typography.Text>
           <Select id="sw-param" value={key} onChange={setParamKey} style={{ width: 160 }} options={params.map((p) => ({ value: p.key, label: t(p.label) }))} /></Space>
         {params.filter((p) => p.key !== key).map((p) => (
@@ -107,13 +119,12 @@ function Sweep() {
       </Flex>
       <Table size="small" bordered pagination={false} scroll={{ x: 'max-content', y: 480 }} dataSource={rows}
         columns={[
-          { key: 'v', title: t(params.find((p) => p.key === key)?.label ?? ''), fixed: 'left', width: 200, render: (_, r) => <Typography.Text>{mechanicLabel(r.m)}</Typography.Text> },
-          ...qtys.map((q, i) => ({ key: q, title: `${q} ${t('pcs')}`, align: 'right' as const, render: (_: unknown, r: (typeof rows)[number]) => <ResultCell r={r.results[i]} base={baseRow[i]} metric={metric} /> })),
-          { key: 'add', title: '', fixed: 'right', width: 70, render: (_, r) => (
-            <Button size="small" icon={<PlusOutlined />} title={t('Add and turn on')} onClick={() => setState((s) => ({ ...s, campaigns: [{ id: uid(), name: '', mechanic: r.m, productIds: scope, active: true }, ...s.campaigns] }))} />
+          { key: 'v', title: t('Campaign'), fixed: 'left', width: 200, render: (_, r) => r.m ? mechanicLabel(r.m) : <Typography.Text type="secondary">{t('No campaign')}</Typography.Text> },
+          ...qtys.map((q, i) => ({ key: q, title: `${q} ${t('pcs')}`, align: 'right' as const, render: (_: unknown, r: (typeof rows)[number]) => <ResultCell r={r.results[i]} base={r.m ? baseRow[i] : undefined} /> })),
+          { key: 'add', title: '', fixed: 'right', width: 56, render: (_, r) => r.m && (
+            <Tooltip title={t('Add and turn on')}><Button size="small" icon={<PlusOutlined />} aria-label={t('Add and turn on')} onClick={() => setState((s) => ({ ...s, campaigns: [{ id: uid(), name: '', mechanic: r.m!, productIds: scope, active: true }, ...s.campaigns] }))} /></Tooltip>
           ) },
         ]} />
-      <Typography.Text type="secondary" className="tiny">{t('Values tried')}: {values.map(num).join(', ')}</Typography.Text>
     </Section>
   );
 }
@@ -122,7 +133,6 @@ function EachAlone() {
   const { settings, state, setState, label } = useApp();
   const [productId, setProductId] = useState(settings.products[0]?.id ?? '');
   const [qtyText, setQtyText] = useState('1, 2, 3, 4, 5, 6, 8, 12');
-  const [metric, setMetric] = useState<'margin' | 'profit'>('margin');
   const product = settings.products.find((p) => p.id === productId) ?? settings.products[0];
   if (!product) return null;
   const qtys = parseQtys(qtyText);
@@ -133,16 +143,15 @@ function EachAlone() {
     <Section id="alone" title={t('Each campaign on its own')}
       sub={t('Every saved campaign tested alone against no campaign. Switch one on to use it everywhere.')}
       extra={<Space wrap>
-        <Segmented size="small" value={product.id} onChange={(v) => setProductId(v as string)} options={settings.products.map((p) => ({ value: p.id, label: p.name }))} />
+        <Select size="small" value={product.id} onChange={setProductId} style={{ width: 160 }} showSearch optionFilterProp="label" options={settings.products.map((p) => ({ value: p.id, label: p.name }))} />
         <Input size="small" id="alone-qtys" value={qtyText} onChange={(e) => setQtyText(e.target.value)} style={{ width: 150 }} aria-label={t('Quantities')} />
-        <Segmented size="small" value={metric} onChange={(v) => setMetric(v as 'margin' | 'profit')} options={[{ value: 'margin', label: t('Margin') }, { value: 'profit', label: t('Profit') }]} />
       </Space>}>
       <Table size="small" bordered pagination={false} scroll={{ x: 'max-content' }} dataSource={rows}
         locale={{ emptyText: t('No campaigns for this product yet.') }}
         columns={[
           { key: 'on', title: t('On'), width: 56, fixed: 'left', render: (_, r) => <Switch size="small" checked={r.c.active} onChange={(v) => setState((s) => ({ ...s, campaigns: s.campaigns.map((x) => (x.id === r.c.id ? { ...x, active: v } : x)) }))} /> },
           { key: 'name', title: t('Campaign'), fixed: 'left', width: 220, render: (_, r) => label(r.c) },
-          ...qtys.map((q, i) => ({ key: q, title: `${q} ${t('pcs')}`, align: 'right' as const, render: (_: unknown, r: (typeof rows)[number]) => <ResultCell r={r.results[i]} base={base[i]} metric={metric} /> })),
+          ...qtys.map((q, i) => ({ key: q, title: <Flex vertical align="flex-end"><span>{q} {t('pcs')}</span><Typography.Text type="secondary" className="tiny">{t('none')}: {pct(base[i].margin)}</Typography.Text></Flex>, align: 'right' as const, render: (_: unknown, r: (typeof rows)[number]) => <ResultCell r={r.results[i]} base={base[i]} /> })),
         ]} />
     </Section>
   );

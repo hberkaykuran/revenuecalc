@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { calcOrder, calcWith, combinations, lineTotal, packBoxes, shelfPrice, tariffPrice } from './engine';
 import { defaultState } from './defaults';
-import { migrate } from './store';
+import { fromView, migrate, migrateV3, toView } from './store';
 import type { Campaign, Mechanic, Settings } from './types';
 
 const s0: Settings = { ...defaultState.settings, ephRate: 0, boxes: defaultState.settings.boxes.map((b) => ({ ...b, packagingCost: 0 })) };
@@ -113,10 +113,61 @@ describe('migration', () => {
       cartCampaigns: [{ id: 'c', name: 'x', tiers: [{ min: 500, type: 'freeShipping', value: 0 }] }],
       active: { productCampaigns: { A: 'b4p3' }, cartCampaignId: 'c' },
     };
-    const s = migrate(v2);
+    const s = migrateV3(v2);
     expect(s.version).toBe(3);
     expect(s.settings.products[0].cost).toBe(60);
     expect(s.settings.deductVat).toBe(false);
     expect(s.campaigns.filter((c) => c.active).map((c) => c.mechanic.type).sort()).toEqual(['buyXPayY', 'freeShipping']);
+  });
+});
+
+describe('commission bands', () => {
+  const bands = [{ min: 139.76, max: null, rate: 19 }, { min: 133.13, max: 139.75, rate: 16.3 }, { min: 123.83, max: 133.12, rate: 15.6 }, { min: null, max: 123.82, rate: 14.6 }];
+  const s1: Settings = { ...s0, products: [{ ...s0.products[0], price: 149.9, commissionBands: bands }] };
+  it('picks the band of the unit price', () => {
+    expect(calcWith(s1, { A: 1 }, []).commission).toBeCloseTo(149.9 * 0.19);
+    const at = (price: number) => calcWith({ ...s1, products: [{ ...s1.products[0], price }] }, { A: 1 }, []).lines[0].commissionRate;
+    expect(at(139.75)).toBe(16.3);
+    expect(at(133.12)).toBe(15.6);
+    expect(at(120)).toBe(14.6);
+  });
+  it('uses the price after product campaigns', () => {
+    const r = calcWith(s1, { A: 1 }, [camp({ type: 'fixedPrice', price: 129.9, minQty: 0 })]);
+    expect(r.lines[0].commissionRate).toBe(15.6);
+  });
+});
+
+describe('channels', () => {
+  it('migrates a v3 store into Shopify and Trendyol channels', () => {
+    const s = migrate({ ...defaultState, settings: { ...defaultState.settings, products: [{ id: 'A', name: 'A', cost: 60, price: 140, vatRate: 20, sizeUnits: 1 }] } });
+    expect(s.version).toBe(4);
+    expect(s.channels.map((c) => c.id)).toEqual(['shopify', 'trendyol']);
+    expect(s.channels[0].prices.A).toBe(140);
+    expect(toView(s).settings.products[0].cost).toBe(60);
+  });
+  it('keeps prices per channel and costs shared', () => {
+    let s = migrate(null);
+    s = { ...s, channelId: 'trendyol' };
+    const v = toView(s);
+    s = fromView(s, { ...v, settings: { ...v.settings, products: v.settings.products.map((p) => (p.id === 'A' ? { ...p, price: 149.9, cost: 50 } : p)) } });
+    expect(s.channels[1].prices.A).toBe(149.9);
+    expect(s.channels[0].prices.A).toBe(134.9);
+    expect(toView({ ...s, channelId: 'shopify' }).settings.products[0].cost).toBe(50);
+  });
+});
+
+describe('products per channel', () => {
+  it('shows a channel only its own products and removes from one channel at a time', () => {
+    let s = migrate(null);
+    s = { ...s, channels: s.channels.map((c) => (c.id === 'trendyol' ? { ...c, prices: { A: 149.9 } } : c)), channelId: 'trendyol' };
+    expect(toView(s).settings.products.map((p) => p.id)).toEqual(['A']);
+    const v = toView(s);
+    s = fromView(s, { ...v, settings: { ...v.settings, products: [] } });
+    expect(s.products.map((p) => p.id)).toEqual(['A', 'B']); // still sold on Shopify
+    expect(s.channels[1].prices.A).toBeUndefined();
+    s = { ...s, channelId: 'shopify' };
+    const v2 = toView(s);
+    s = fromView(s, { ...v2, settings: { ...v2.settings, products: v2.settings.products.filter((p) => p.id !== 'B') } });
+    expect(s.products.map((p) => p.id)).toEqual(['A']);
   });
 });

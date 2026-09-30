@@ -1,4 +1,4 @@
-import type { AppState } from './types';
+import type { AppState, Channel, Store } from './types';
 
 const zones = ['Şehir içi', 'Yakın', 'Kısa', 'Orta', 'Uzak'];
 const row = (from: number, to: number, p: number, perDesi = false) => ({ from, to, prices: zones.map(() => p), perDesi });
@@ -27,6 +27,7 @@ export const defaultState: AppState = {
     commissionRate: 4.7,
     commissionVatRate: 20,
     customerShippingFee: 100,
+    orderFee: 0,
     freeShippingThreshold: 750,
     overflowRemainderBestFit: false,
     deductVat: false,
@@ -41,3 +42,29 @@ export const defaultState: AppState = {
   stack: {},
   scenarios: [],
 };
+
+const { products, ...shopifySettings } = defaultState.settings;
+
+export const defaultStore: Store = {
+  version: 4,
+  products: products.map(({ price, ...p }) => ({ ...p, price })),
+  channels: [
+    {
+      id: 'shopify', name: 'Shopify', settings: shopifySettings,
+      prices: Object.fromEntries(products.map((p) => [p.id, p.price])), bands: {},
+      campaigns: defaultState.campaigns, stack: {}, scenarios: [],
+    },
+    trendyolChannel(shopifySettings, Object.fromEntries(products.map((p) => [p.id, p.price]))),
+  ],
+  channelId: 'shopify',
+  tariffHistory: [],
+};
+
+/** Starting point for Trendyol: the seller pays shipping and the tariff sets commission per product. Check against your agreement. */
+export function trendyolChannel(base: Channel['settings'], prices: Record<string, number>): Channel {
+  return {
+    id: 'trendyol', name: 'Trendyol',
+    settings: { ...base, commissionRate: 19, customerShippingFee: 0, freeShippingThreshold: 0, orderFee: 0 },
+    prices: { ...prices }, bands: {}, campaigns: [], stack: {}, scenarios: [],
+  };
+}

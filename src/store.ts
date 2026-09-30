@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { defaultState } from './defaults';
+import { defaultState, defaultStore, trendyolChannel } from './defaults';
 import type { Lang } from './i18n';
-import type { AppState, Campaign, Mechanic } from './types';
+import type { AppState, Campaign, Channel, Mechanic, Store } from './types';
 
 const KEY = 'revenuecalc:v1';
 const UI_KEY = 'revenuecalc:ui';
@@ -52,7 +52,7 @@ function fromV2(raw: any): AppState {
   return s;
 }
 
-export function migrate(raw: any): AppState {
+export function migrateV3(raw: any): AppState {
   if (!raw || typeof raw !== 'object' || !raw.settings) return structuredClone(defaultState);
   if (raw.version !== 3) return fromV2(raw);
   const d = structuredClone(defaultState);
@@ -60,13 +60,68 @@ export function migrate(raw: any): AppState {
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
+/** Any saved data (v1–v4, or a v3 export) as a v4 store. */
+export function migrate(raw: any): Store {
+  if (raw?.version === 4 && Array.isArray(raw.channels)) {
+    const d = structuredClone(defaultStore);
+    const channels = (raw.channels as Channel[]).map((c) => ({ ...c, settings: { ...d.channels[0].settings, ...c.settings } }));
+    return { ...d, ...raw, channels };
+  }
+  if (!raw || typeof raw !== 'object' || !raw.settings) return structuredClone(defaultStore);
+  const v3 = migrateV3(raw);
+  const { products, ...settings } = v3.settings;
+  const prices = Object.fromEntries(products.map((p) => [p.id, p.price]));
+  const fullSettings = { ...defaultStore.channels[0].settings, ...settings };
+  return {
+    version: 4,
+    products: products.map(({ commissionBands: _b, ...p }) => p),
+    channels: [
+      { id: 'shopify', name: 'Shopify', settings: fullSettings, prices, bands: {}, campaigns: v3.campaigns, stack: v3.stack, scenarios: v3.scenarios },
+      trendyolChannel(fullSettings, prices),
+    ],
+    channelId: 'shopify',
+    tariffHistory: [],
+  };
+}
+
+export const activeChannel = (s: Store) => s.channels.find((c) => c.id === s.channelId) ?? s.channels[0];
+
+/** The one-channel view the screens work with. */
+export function toView(s: Store): AppState {
+  const ch = activeChannel(s);
+  // a channel shows the products it has a price for
+  const products = s.products.filter((p) => ch.prices[p.id] !== undefined).map((p) => ({ ...p, price: ch.prices[p.id], commissionBands: ch.bands[p.id] }));
+  return { version: 3, settings: { ...ch.settings, products }, campaigns: ch.campaigns, stack: ch.stack, scenarios: ch.scenarios };
+}
+
+/** Write a changed view back into the store: prices and bands to the channel, everything else to shared products. */
+export function fromView(s: Store, v: AppState): Store {
+  const ch = activeChannel(s);
+  const { products, ...settings } = v.settings;
+  const inView = new Map(products.map((p) => [p.id, p]));
+  const bands: Channel['bands'] = {};
+  for (const p of products) if (p.commissionBands?.length) bands[p.id] = p.commissionBands;
+  const next: Channel = {
+    ...ch, settings, campaigns: v.campaigns, stack: v.stack, scenarios: v.scenarios,
+    prices: Object.fromEntries(products.map((p) => [p.id, p.price])), bands,
+  };
+  const channels = s.channels.map((c) => (c.id === ch.id ? next : c));
+  const sold = (id: string) => channels.some((c) => c.prices[id] !== undefined);
+  const strip = ({ price, commissionBands: _b, ...p }: AppState['settings']['products'][number]) => ({ ...p, price });
+  const kept = s.products
+    .map((p) => (inView.has(p.id) ? { ...strip(inView.get(p.id)!), price: p.price ?? inView.get(p.id)!.price } : p))
+    .filter((p) => sold(p.id)); // removed from its last channel
+  const added = products.filter((p) => !s.products.some((x) => x.id === p.id)).map(strip);
+  return { ...s, products: [...kept, ...added], channels };
+}
+
 export type SaveStatus = 'saved' | 'unavailable';
 
-export function useAppState() {
-  const [state, setState] = useState<AppState>(() => migrate(read(KEY)));
+export function useStore() {
+  const [store, setStore] = useState<Store>(() => migrate(read(KEY)));
   const [status, setStatus] = useState<SaveStatus>('saved');
-  useEffect(() => { setStatus(write(KEY, state) ? 'saved' : 'unavailable'); }, [state]);
-  return [state, setState, status] as const;
+  useEffect(() => { setStatus(write(KEY, store) ? 'saved' : 'unavailable'); }, [store]);
+  return [store, setStore, status] as const;
 }
 
 /** Per-browser view preferences: language, collapsed panels, hidden columns. */
