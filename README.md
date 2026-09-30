@@ -1,31 +1,41 @@
 # Revenue calculator
 
-Profit per order for the shop, after product campaigns, cart campaigns, platform commission, shipping (DHL eCommerce tariff, total desi) and VAT. Everything is editable in the app and saved in the browser.
+Profit and margin per order after campaigns, platform commission, shipping (DHL eCommerce tariff, total desi), packaging and VAT. Turkish and English. Everything is editable and saved in the browser; export/import a JSON file to move it.
 
 ```sh
 npm install
 npm run dev             # local dev server
-npm test                # calculation engine tests
+npm test                # engine, strategy and translation tests
 npm run build           # static site in dist/
-npm run build:artifact  # single page in dist-artifact/revenue-calculator.html
+npm run build:artifact  # single page in dist-artifact/ (React, Ant Design and icons from CDNs)
 ```
+
+## Campaigns
+
+A campaign is one mechanic with its own numbers, picked from presets or set by hand:
+
+| Product campaigns (per product line) | Cart campaigns (whole order) |
+|---|---|
+| % off each unit, TL off each unit, new unit price (each optionally from a quantity) | % off the cart over an amount |
+| Buy X pay Y, X pieces for a price, every Nth unit off, quantity tiers | TL off the cart over an amount, cart tiers, free shipping over an amount |
+
+Any number of campaigns can be on. **Combination rules** decide which may apply to the same order. By default:
+- free shipping stacks with everything
+- product and cart campaigns stack
+- two campaigns on the same product don't stack
+- two cart discounts don't stack
+
+Any pair can be changed. When rules clash, the customer gets the combination that makes their order cheapest, the way marketplaces apply the best offer.
 
 ## How an order is calculated
 
-1. **Product campaigns**, per product: unit price change (% off, TL off, fixed price, optionally from a minimum qty), then a bundle rule (buy X pay Y, or X for a fixed price).
-2. **Cart campaign**: checked on the total after product campaigns; the highest tier reached applies.
-3. **Shipping fee** charged to the customer unless the product total after all discounts reaches the free-shipping threshold.
-4. **Commission**: % of the product total after discounts (shipping excluded).
-5. **Boxes**: smallest box that fits; above the largest box, whole large boxes. Shipping cost = tariff for the total desi + EPH + VAT. Each box also has its own packaging cost (box, tape, label).
-6. **Profit** = customer pays − commission − shipping cost − packaging − cost of goods − VAT payable. VAT payable is the VAT collected on products and the shipping fee, minus the VAT paid on goods, shipping, packaging and commission. VAT deduction can be switched off.
+1. Unit price changes, then line mechanics, on each product.
+2. Cart campaigns, checked on the total after product campaigns.
+3. The shipping fee is charged unless the product total after all discounts reaches the free-shipping threshold (or a free-shipping campaign).
+4. Commission is taken on the product total after discounts; shipping is excluded.
+5. Boxes: the smallest box that fits; above the largest box, whole large boxes. Shipping cost = tariff for the total desi + EPH + VAT, plus packaging per box.
+6. Profit = customer pays − commission − shipping − packaging − cost of goods. Prices and costs include VAT. VAT payable is shown separately and is only deducted if you switch that on.
 
-## Tabs
+## Ideas
 
-- **Results**: box milestones, every order size, saved scenarios side by side, and an A × B mix grid.
-- **Campaign lab**: every campaign in the library for each order size, with one-click Activate.
-- **Ideas**: generates campaigns for a goal ("customers buy 1, get them to buy 3"), filtered by margin floor and customer saving, plus notes on shipping and box cliffs.
-- **Order calculator**: one order in full detail.
-- **Campaigns**: edit the campaign library and saved scenarios.
-- **Settings**: products, boxes, packaging, fees, VAT and the shipping tariff.
-
-All prices, costs and fees are VAT included except the shipping tariff, which is VAT and EPH excluded, as in the contract.
+Pick a goal: bigger baskets, reach free shipping, cross-sell, or win more orders. Enter how your orders split by quantity today. The generator tries preset and goal-sized campaigns, and pairs of product and cart campaigns. It keeps the ones within your margin and customer-saving limits and ranks them by **break-even**: the share of customers who must change their order for the campaign to beat doing nothing. Discounts given to customers who would have bought anyway count as a cost.

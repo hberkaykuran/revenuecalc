@@ -1,254 +1,284 @@
+import { MinusSquareOutlined, PlusSquareOutlined, SettingOutlined } from '@ant-design/icons';
+import { Button, Checkbox, Dropdown, Flex, InputNumber, Segmented, Select, Space, Table, Tag, theme, Tooltip, Typography } from 'antd';
+import type { ColumnsType, ColumnType } from 'antd/es/table';
 import { useMemo, useState } from 'react';
-import { boxLabel, calcOrder, type OrderResult } from '../engine';
-import { pct, tl, tl0 } from '../format';
-import type { AppState, Cart, Setup } from '../types';
-import { Num, Segmented } from './inputs';
+import { useApp } from '../context';
+import { boxCounts, calcOrder, type OrderResult } from '../engine';
+import { num, pct, t, tl, tl0 } from '../i18n';
+import type { Cart } from '../types';
+import { Section } from './common';
 
-type Props = { state: AppState };
+type Metric = 'margin' | 'profit' | 'perUnit';
+const metricValue = (r: OrderResult, m: Metric) => (m === 'margin' ? r.margin : m === 'profit' ? r.profit : r.qty ? r.profit / r.qty : 0);
+const metricText = (v: number, m: Metric) => (m === 'margin' ? pct(v) : tl(v));
+const signed = (v: number, m: Metric) => `${v >= 0 ? '+' : '−'}${m === 'margin' ? t('{v} pts', { v: num(Math.abs(v) * 100) }) : tl(Math.abs(v))}`;
 
-const tone = (n: number) => (n < 0 ? 'neg' : '');
+export const boxText = (r: OrderResult) => boxCounts(r.boxes).map(([n, c]) => (c > 1 ? `${c}× ${t(n)}` : t(n))).join(' + ') || '—';
 
-export function Results({ state }: Props) {
-  const scenario = state.active;
-  const { settings } = state;
+function MetricSwitch({ value, onChange }: { value: Metric; onChange: (m: Metric) => void }) {
+  return <Segmented size="small" value={value} onChange={(v) => onChange(v as Metric)}
+    options={[{ value: 'margin', label: t('Margin') }, { value: 'profit', label: t('Profit') }, { value: 'perUnit', label: t('Per unit') }]} />;
+}
+
+export function Results() {
+  return (
+    <Flex vertical gap={12}>
+      <MarginSummary />
+      <QuantityTable />
+      <Compare />
+      <MixGrid />
+    </Flex>
+  );
+}
+
+function Cell({ r, base, metric }: { r: OrderResult; base?: OrderResult; metric: Metric }) {
+  const v = metricValue(r, metric);
+  const d = base ? v - metricValue(base, metric) : 0;
+  return (
+    <Flex vertical align="flex-end">
+      <Typography.Text type={r.profit < 0 ? 'danger' : undefined} strong>{metricText(v, metric)}</Typography.Text>
+      <Typography.Text type="secondary" className="tiny">
+        {metric === 'margin' ? tl(r.profit) : pct(r.margin)}
+      </Typography.Text>
+      {base && Math.abs(d) > 0.0005 && (
+        <Typography.Text type={d > 0 ? 'success' : 'danger'} className="tiny">{signed(d, metric)}</Typography.Text>
+      )}
+    </Flex>
+  );
+}
+
+function MarginSummary() {
+  const { settings, calc, calcBase, whatIfOn } = useApp();
+  const [metric, setMetric] = useState<Metric>('margin');
+  const [maxQty, setMaxQty] = useState(12);
+  const qs = Array.from({ length: Math.min(Math.max(1, maxQty), 60) }, (_, i) => i + 1);
+  const rows = settings.products.map((p) => ({
+    key: p.id, name: p.name,
+    results: qs.map((q) => calc({ [p.id]: q })),
+    base: whatIfOn ? qs.map((q) => calcBase({ [p.id]: q })) : undefined,
+  }));
+  const columns: ColumnsType<(typeof rows)[number]> = [
+    { key: 'name', title: t('Product'), dataIndex: 'name', fixed: 'left', width: 90 },
+    ...qs.map((q, i) => ({
+      key: q, title: `${q} ${t('pcs')}`, align: 'right' as const, width: 96,
+      render: (_: unknown, row: (typeof rows)[number]) => <Cell r={row.results[i]} base={row.base?.[i]} metric={metric} />,
+    })),
+  ];
+  return (
+    <Section id="summary" title={t('Margin by quantity')}
+      sub={t('Profit ÷ what the customer pays, for an order of one product, with the campaigns that are on.')}
+      extra={<Space wrap><MetricSwitch value={metric} onChange={setMetric} /><Space size={4}>{t('Up to')}<InputNumber size="small" min={1} max={60} value={maxQty} onChange={(v) => v && setMaxQty(v)} style={{ width: 64 }} /></Space></Space>}>
+      <Table size="small" pagination={false} columns={columns} dataSource={rows} scroll={{ x: 'max-content' }} bordered />
+    </Section>
+  );
+}
+
+type Row = { key: number; q: number; r: OrderResult; delta: number; boxChange: boolean; base?: OrderResult };
+type Col = { id: string; title: string; render: (row: Row) => React.ReactNode };
+type Group = { id: string; title: string; summary: string; cols: Col[] };
+
+function QuantityTable() {
+  const { settings, calc, calcBase, whatIfOn, ui, setUi, label } = useApp();
+  const { token } = theme.useToken();
   const products = settings.products;
   const [productId, setProductId] = useState(products[0]?.id ?? '');
   const [maxQty, setMaxQty] = useState(24);
   const product = products.find((p) => p.id === productId) ?? products[0];
-  const calc = (cart: Cart, s: Setup = scenario) => calcOrder(settings, cart, s, state);
 
-  const rows = useMemo(() => {
+  const rows: Row[] = useMemo(() => {
     if (!product) return [];
-    const out: { q: number; r: OrderResult; delta: number; boxChange: boolean }[] = [];
+    const out: Row[] = [];
     let prev: OrderResult | null = null;
     for (let q = 1; q <= Math.min(Math.max(1, maxQty), 200); q++) {
-      const r = calc({ [product.id]: q });
-      out.push({
-        q, r, delta: prev ? r.profit - prev.profit : r.profit,
-        boxChange: !!prev && boxLabel(prev.boxes) !== boxLabel(r.boxes),
-      });
+      const cart: Cart = { [product.id]: q };
+      const r = calc(cart);
+      out.push({ key: q, q, r, delta: prev ? r.profit - prev.profit : r.profit, boxChange: !!prev && prev.desi !== r.desi, base: whatIfOn ? calcBase(cart) : undefined });
       prev = r;
     }
     return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, scenario, product, maxQty]);
+  }, [product, maxQty, calc, calcBase, whatIfOn]);
 
-  if (!product) return <p className="empty">Add a product in Settings to see results.</p>;
+  if (!product) return null;
+  const neg = (v: number) => (v > 0.005 ? `−${tl(v)}` : '—');
+  const groups: Group[] = [
+    { id: 'order', title: t('Order'), summary: 'box', cols: [
+      { id: 'box', title: t('Box'), render: (x) => <Tag>{boxText(x.r)}</Tag> },
+      { id: 'desi', title: t('Desi'), render: (x) => tl0(x.r.desi) },
+    ] },
+    { id: 'result', title: t('Result'), summary: 'profit', cols: [
+      { id: 'profit', title: t('Profit'), render: (x) => (
+        <Flex vertical align="flex-end">
+          <Typography.Text strong type={x.r.profit < 0 ? 'danger' : undefined}>{tl(x.r.profit)}</Typography.Text>
+          {x.base && Math.abs(x.r.profit - x.base.profit) > 0.005 && <Typography.Text className="tiny" type={x.r.profit > x.base.profit ? 'success' : 'danger'}>{signed(x.r.profit - x.base.profit, 'profit')}</Typography.Text>}
+        </Flex>
+      ) },
+      { id: 'margin', title: t('Margin'), render: (x) => <Typography.Text strong>{pct(x.r.margin)}</Typography.Text> },
+      { id: 'perUnit', title: t('Per unit'), render: (x) => tl(x.r.profit / x.q) },
+      { id: 'delta', title: t('+1 unit'), render: (x) => <Typography.Text type={x.delta < 0 ? 'danger' : 'success'}>{x.delta >= 0 ? '+' : '−'}{tl(Math.abs(x.delta))}</Typography.Text> },
+    ] },
+    { id: 'revenue', title: t('Revenue'), summary: 'pays', cols: [
+      { id: 'list', title: t('List price'), render: (x) => tl(x.r.list) },
+      { id: 'disc', title: t('Discounts'), render: (x) => neg(x.r.totalDiscount) },
+      { id: 'products', title: t('Products'), render: (x) => tl(x.r.productRevenue) },
+      { id: 'shipIn', title: t('Shipping fee'), render: (x) => (x.r.shippingCharged ? tl(x.r.shippingCharged) : <Tag color="green">{t('free')}</Tag>) },
+      { id: 'pays', title: t('Customer pays'), render: (x) => tl(x.r.customerPays) },
+    ] },
+    { id: 'costs', title: t('Costs'), summary: 'costs', cols: [
+      { id: 'comm', title: t('Commission'), render: (x) => neg(x.r.commission) },
+      { id: 'ship', title: t('Shipping cost'), render: (x) => neg(x.r.shippingCost) },
+      { id: 'pack', title: t('Packaging'), render: (x) => neg(x.r.packaging) },
+      { id: 'cogs', title: t('Cost of goods'), render: (x) => neg(x.r.cogs) },
+      { id: 'costs', title: t('Total costs'), render: (x) => neg(x.r.costs) },
+    ] },
+    { id: 'tax', title: t('VAT'), summary: 'vat', cols: [
+      { id: 'vat', title: t('VAT payable'), render: (x) => tl(x.r.vatPayable) },
+    ] },
+    { id: 'camps', title: t('Campaigns'), summary: 'applied', cols: [
+      { id: 'applied', title: t('Applied'), render: (x) => (
+        <Flex wrap gap={2}>{x.r.applied.map((c) => <Tag key={c.id} color="blue">{label(c)}</Tag>)}
+          {x.r.skipped.map((c) => <Tooltip key={c.id} title={t('Left out by combination rules')}><Tag>{label(c)}</Tag></Tooltip>)}</Flex>
+      ) },
+    ] },
+  ];
+  const tableId = 'qty';
+  const hidden = new Set(ui.hiddenCols[tableId] ?? []);
+  const open = new Set(ui.openGroups[tableId] ?? ['order', 'result']);
+  const toggleGroup = (g: string) => setUi((u) => {
+    const cur = new Set(u.openGroups[tableId] ?? ['order', 'result']);
+    if (cur.has(g)) cur.delete(g); else cur.add(g);
+    return { ...u, openGroups: { ...u.openGroups, [tableId]: [...cur] } };
+  });
+  const toggleCol = (c: string) => setUi((u) => {
+    const cur = new Set(u.hiddenCols[tableId] ?? []);
+    if (cur.has(c)) cur.delete(c); else cur.add(c);
+    return { ...u, hiddenCols: { ...u.hiddenCols, [tableId]: [...cur] } };
+  });
 
-  const sortedBoxes = [...settings.boxes].sort((a, b) => a.capacity - b.capacity);
+  const columns: ColumnsType<Row> = [
+    { key: 'q', title: t('Qty'), dataIndex: 'q', fixed: 'left', width: 56, render: (q) => <b>{q}</b> },
+    ...groups.map((g) => {
+      const expanded = open.has(g.id) && g.cols.length > 1;
+      const cols = (expanded ? g.cols : g.cols.filter((c) => c.id === g.summary)).filter((c) => !hidden.has(c.id));
+      if (!cols.length) return null;
+      return {
+        key: g.id,
+        title: g.cols.length > 1 ? (
+          <Button type="text" size="small" icon={expanded ? <MinusSquareOutlined /> : <PlusSquareOutlined />} onClick={() => toggleGroup(g.id)}>{g.title}</Button>
+        ) : g.title,
+        children: cols.map((c): ColumnType<Row> => ({ key: c.id, title: c.title, align: c.id === 'box' || c.id === 'applied' ? 'left' : 'right', render: (_, row) => c.render(row) })),
+      };
+    }).filter(Boolean) as ColumnsType<Row>,
+  ];
 
-  return (
-    <div className="stack">
-      <section className="panel">
-        <header className="panel-head">
-          <div>
-            <h2>Box milestones</h2>
-            <p className="sub">Profit per order when a customer fills each box with one product, with the campaigns above.</p>
-          </div>
-        </header>
-        <div className="scroll">
-          <table className="grid milestones">
-            <thead>
-              <tr>
-                <th>Product</th>
-                <th>Single</th>
-                {sortedBoxes.map((b) => <th key={b.id}>{b.name} full</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {products.map((p) => {
-                const qs = [1, ...sortedBoxes.map((b) => Math.max(1, Math.floor(b.capacity / p.sizeUnits + 1e-9)))];
-                return (
-                  <tr key={p.id}>
-                    <th scope="row">{p.name}</th>
-                    {qs.map((q, i) => {
-                      const r = calc({ [p.id]: q });
-                      return (
-                        <td key={i}>
-                          <div className="cell-main"><span className={tone(r.profit)}>{tl(r.profit)}</span></div>
-                          <div className="cell-sub">{q} pcs · {pct(r.margin)} · {tl(r.profit / q)}/pc</div>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+  const colMenu = (
+    <div className="col-menu" style={{ background: token.colorBgElevated, boxShadow: token.boxShadowSecondary }}>
+      {groups.map((g) => (
+        <div key={g.id}>
+          <Typography.Text type="secondary" className="tiny">{g.title}</Typography.Text>
+          {g.cols.map((c) => <Checkbox key={c.id} checked={!hidden.has(c.id)} onChange={() => toggleCol(c.id)}>{c.title}</Checkbox>)}
         </div>
-      </section>
-
-      <section className="panel">
-        <header className="panel-head">
-          <div>
-            <h2>By quantity</h2>
-            <p className="sub">Every order size for one product. Rows where the extra unit loses money are flagged.</p>
-          </div>
-          <div className="controls">
-            <Segmented label="Product" value={product.id} onChange={setProductId}
-              options={products.map((p) => ({ value: p.id, label: p.name }))} />
-            <label className="inline">Up to <Num id="maxQty" label="Max quantity" value={maxQty} onChange={setMaxQty} min={1} width="4.5rem" /></label>
-          </div>
-        </header>
-        <div className="scroll">
-          <table className="grid matrix">
-            <thead>
-              <tr>
-                <th>Qty</th><th>Box</th><th>Desi</th><th>List</th><th>Discounts</th><th>Products</th>
-                <th>Shipping in</th><th>Customer pays</th><th>Commission</th><th>Shipping cost</th>
-                <th>Packaging</th><th>Cost of goods</th><th>{settings.deductVat ? 'VAT payable' : 'VAT (info)'}</th>
-                <th>Profit</th><th>Margin</th><th>Per unit</th><th>+1 unit</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(({ q, r, delta, boxChange }) => (
-                <tr key={q} className={`${boxChange ? 'box-change' : ''} ${delta < 0 ? 'loss-row' : ''}`}>
-                  <th scope="row">{q}</th>
-                  <td><span className="chip">{boxLabel(r.boxes)}</span></td>
-                  <td>{tl0(r.desi)}</td>
-                  <td>{tl(r.list)}</td>
-                  <td className="muted">{r.totalDiscount > 0 ? `−${tl(r.totalDiscount)}` : '—'}</td>
-                  <td>{tl(r.productRevenue)}</td>
-                  <td>{r.shippingCharged ? tl(r.shippingCharged) : <span className="free">free</span>}</td>
-                  <td>{tl(r.customerPays)}</td>
-                  <td className="muted">−{tl(r.commission)}</td>
-                  <td className="muted">−{tl(r.shippingCost)}</td>
-                  <td className="muted">−{tl(r.packaging)}</td>
-                  <td className="muted">−{tl(r.cogs)}</td>
-                  <td className="muted">{settings.deductVat ? '−' : ''}{tl(r.vatPayable)}</td>
-                  <td className="strong"><span className={tone(r.profit)}>{tl(r.profit)}</span></td>
-                  <td>{pct(r.margin)}</td>
-                  <td>{tl(r.profit / q)}</td>
-                  <td><span className={delta < 0 ? 'neg flag' : 'pos'}>{delta >= 0 ? '+' : ''}{tl(delta)}</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <Compare state={state} productId={product.id} maxQty={maxQty} />
-      {products.length >= 2 && <MixGrid state={state} scenario={scenario} />}
+      ))}
     </div>
   );
-}
 
-function Compare({ state, productId, maxQty }: { state: AppState; productId: string; maxQty: number }) {
-  const { settings } = state;
-  const scenarios = [{ id: '__active', name: 'Active now', ...state.active }, ...state.scenarios];
-  const product = settings.products.find((p) => p.id === productId)!;
-  const qs = Array.from({ length: Math.min(Math.max(1, maxQty), 200) }, (_, i) => i + 1);
   return (
-    <section className="panel">
-      <header className="panel-head">
-        <div>
-          <h2>Scenario comparison · {product.name}</h2>
-          <p className="sub">Profit per order for the active campaigns and each saved scenario. The best one for each quantity is highlighted.</p>
-        </div>
-      </header>
-      <div className="scroll">
-        <table className="grid compare">
-          <thead>
-            <tr><th>Qty</th>{scenarios.map((s) => <th key={s.id}>{s.name}</th>)}</tr>
-          </thead>
-          <tbody>
-            {qs.map((q) => {
-              const rs = scenarios.map((s) => calcOrder(settings, { [productId]: q }, s, state));
-              const best = Math.max(...rs.map((r) => r.profit));
-              return (
-                <tr key={q}>
-                  <th scope="row">{q}</th>
-                  {rs.map((r, i) => (
-                    <td key={i} className={Math.abs(r.profit - best) < 0.005 && rs.length > 1 ? 'best' : ''}>
-                      <div className="cell-main"><span className={tone(r.profit)}>{tl(r.profit)}</span></div>
-                      <div className="cell-sub">pays {tl(r.customerPays)} · {pct(r.margin)}</div>
-                    </td>
-                  ))}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </section>
+    <Section id="byqty" title={t('By quantity')}
+      sub={t('Every order size for one product. Click a column group to expand or shrink it. Rows where one more unit lowers profit are marked red.')}
+      extra={
+        <Space wrap>
+          <Segmented size="small" value={product.id} onChange={(v) => setProductId(v as string)} options={products.map((p) => ({ value: p.id, label: p.name }))} />
+          <Space size={4}>{t('Up to')}<InputNumber size="small" min={1} max={200} value={maxQty} onChange={(v) => v && setMaxQty(v)} style={{ width: 64 }} /></Space>
+          <Dropdown trigger={['click']} popupRender={() => colMenu}><Button size="small" icon={<SettingOutlined />}>{t('Columns')}</Button></Dropdown>
+        </Space>
+      }>
+      <Table size="small" bordered pagination={false} columns={columns} dataSource={rows} scroll={{ x: 'max-content', y: 520 }}
+        rowClassName={(r) => `${r.delta < 0 ? 'row-loss' : ''} ${r.boxChange ? 'row-box' : ''}`} />
+    </Section>
   );
 }
 
-function MixGrid({ state, scenario }: { state: AppState; scenario: Setup }) {
-  const { settings } = state;
+function Compare() {
+  const { settings, state, calc } = useApp();
+  const [metric, setMetric] = useState<Metric>('margin');
+  const [productId, setProductId] = useState(settings.products[0]?.id ?? '');
+  const product = settings.products.find((p) => p.id === productId) ?? settings.products[0];
+  if (!product) return null;
+  const sets = [
+    { key: 'now', name: t('Campaigns that are on'), run: (cart: Cart) => calc(cart) },
+    { key: 'none', name: t('No campaign'), run: (cart: Cart) => calcOrder(settings, cart, [], {}) },
+    ...state.scenarios.map((sc) => ({ key: sc.id, name: sc.name, run: (cart: Cart) => calcOrder(settings, cart, sc.campaigns.map((c) => ({ ...c, active: true })), sc.stack) })),
+  ];
+  const qs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 18, 24];
+  const data = qs.map((q) => {
+    const rs = sets.map((s) => s.run({ [product.id]: q }));
+    const best = Math.max(...rs.map((r) => r.profit));
+    return { key: q, q, rs, best };
+  });
+  return (
+    <Section id="compare" title={t('Scenario comparison')}
+      sub={t('The same orders under your saved scenarios. The most profitable one for each quantity is marked.')}
+      extra={<Space wrap><Segmented size="small" value={product.id} onChange={(v) => setProductId(v as string)} options={settings.products.map((p) => ({ value: p.id, label: p.name }))} /><MetricSwitch value={metric} onChange={setMetric} /></Space>}>
+      <Table size="small" bordered pagination={false} dataSource={data} scroll={{ x: 'max-content' }}
+        columns={[
+          { key: 'q', title: t('Qty'), dataIndex: 'q', fixed: 'left', width: 56 },
+          ...sets.map((s, i) => ({
+            key: s.key, title: s.name, align: 'right' as const,
+            render: (_: unknown, row: (typeof data)[number]) => (
+              <Flex justify="flex-end" gap={6} align="center">
+                {Math.abs(row.rs[i].profit - row.best) < 0.005 && sets.length > 1 && <Tag color="green">{t('best')}</Tag>}
+                <Cell r={row.rs[i]} metric={metric} />
+              </Flex>
+            ),
+          })),
+        ]} />
+    </Section>
+  );
+}
+
+function MixGrid() {
+  const { settings, calc } = useApp();
+  const { token } = theme.useToken();
   const ps = settings.products;
-  const [xId, setX] = useState(ps[0].id);
-  const [yId, setY] = useState(ps[1].id);
-  const [metric, setMetric] = useState<'profit' | 'margin'>('profit');
+  const [xId, setX] = useState(ps[0]?.id);
+  const [yId, setY] = useState(ps[1]?.id);
+  const [metric, setMetric] = useState<Metric>('margin');
   const [size, setSize] = useState(12);
+  if (ps.length < 2) return null;
   const x = ps.find((p) => p.id === xId) ?? ps[0];
   const y = ps.find((p) => p.id === yId && p.id !== x.id) ?? ps.find((p) => p.id !== x.id)!;
-  const n = Math.min(Math.max(1, size), 30);
-  const grid = useMemo(() => {
-    const g: OrderResult[][] = [];
-    for (let j = 0; j <= n; j++) {
-      g.push([]);
-      for (let i = 0; i <= n; i++) g[j].push(calcOrder(settings, { [x.id]: i, [y.id]: j }, scenario, state));
-    }
-    return g;
-  }, [state, scenario, x.id, y.id, n, settings]);
-  const vals = grid.flat().filter((r) => r.qty > 0).map((r) => (metric === 'profit' ? r.profit : r.margin));
+  const n = Math.min(Math.max(1, size), 24);
+  const grid = Array.from({ length: n + 1 }, (_, j) => Array.from({ length: n + 1 }, (__, i) => calc({ [x.id]: i, [y.id]: j })));
+  const vals = grid.flat().filter((r) => r.qty > 0).map((r) => metricValue(r, metric));
   const max = Math.max(...vals, 0.0001);
-  const min = Math.min(...vals, 0);
-  const bg = (v: number) => {
-    if (v >= 0) return `color-mix(in oklab, var(--accent) ${Math.round((v / max) * 70)}%, var(--surface))`;
-    return `color-mix(in oklab, var(--bad) ${Math.round((v / min) * 60)}%, var(--surface))`;
-  };
+  const bg = (v: number) => (v < 0 ? token.colorErrorBg : `color-mix(in srgb, ${token.colorPrimary} ${Math.round((v / max) * 35)}%, transparent)`);
   return (
-    <section className="panel">
-      <header className="panel-head">
-        <div>
-          <h2>Mixed orders</h2>
-          <p className="sub">Every combination of two products in one order, with each product's own campaign and the cart campaign applied.</p>
-        </div>
-        <div className="controls">
-          <label className="inline">Across
-            <select id="mixX" value={x.id} onChange={(e) => setX(e.target.value)}>
-              {ps.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </label>
-          <label className="inline">Down
-            <select id="mixY" value={y.id} onChange={(e) => setY(e.target.value)}>
-              {ps.filter((p) => p.id !== x.id).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </label>
-          <label className="inline">Up to <Num id="mixSize" label="Grid size" value={size} onChange={setSize} min={1} width="4rem" /></label>
-          <Segmented label="Metric" value={metric} onChange={setMetric}
-            options={[{ value: 'profit', label: 'Profit' }, { value: 'margin', label: 'Margin' }]} />
-        </div>
-      </header>
-      <div className="scroll">
-        <table className="heat">
-          <thead>
-            <tr>
-              <th className="corner">{y.name} ↓ · {x.name} →</th>
-              {grid[0].map((_, i) => <th key={i}>{i}</th>)}
-            </tr>
-          </thead>
+    <Section id="mix" title={t('Mixed orders')}
+      sub={t('Every combination of two products in one order, with all campaigns that are on. Hover a cell for details.')}
+      extra={
+        <Space wrap>
+          <Select size="small" value={x.id} onChange={setX} options={ps.map((p) => ({ value: p.id, label: `→ ${p.name}` }))} style={{ width: 90 }} />
+          <Select size="small" value={y.id} onChange={setY} options={ps.filter((p) => p.id !== x.id).map((p) => ({ value: p.id, label: `↓ ${p.name}` }))} style={{ width: 90 }} />
+          <Space size={4}>{t('Up to')}<InputNumber size="small" min={1} max={24} value={size} onChange={(v) => v && setSize(v)} style={{ width: 60 }} /></Space>
+          <MetricSwitch value={metric} onChange={setMetric} />
+        </Space>
+      }>
+      <div className="mix-scroll">
+        <table className="mix">
+          <thead><tr><th>{y.name} ↓ · {x.name} →</th>{grid[0].map((_, i) => <th key={i}>{i}</th>)}</tr></thead>
           <tbody>
             {grid.map((row, j) => (
               <tr key={j}>
-                <th scope="row">{j}</th>
-                {row.map((r, i) => {
-                  if (r.qty === 0) return <td key={i} className="void" />;
-                  const v = metric === 'profit' ? r.profit : r.margin;
-                  return (
-                    <td key={i} style={{ background: bg(v) }}
-                      title={`${i} ${x.name} + ${j} ${y.name}\n${boxLabel(r.boxes)} · ${r.desi} desi\nCustomer pays ${tl(r.customerPays)}\nProfit ${tl(r.profit)} (${pct(r.margin)})`}>
-                      {metric === 'profit' ? tl0(v) : pct(v)}
-                    </td>
-                  );
-                })}
+                <th>{j}</th>
+                {row.map((r, i) => r.qty === 0 ? <td key={i} /> : (
+                  <Tooltip key={i} title={<>{i} {x.name} + {j} {y.name}<br />{boxText(r)} · {r.desi} desi<br />{t('Customer pays')} {tl(r.customerPays)}<br />{t('Profit')} {tl(r.profit)} ({pct(r.margin)})</>}>
+                    <td style={{ background: bg(metricValue(r, metric)) }}>{metric === 'margin' ? pct(r.margin) : tl0(metricValue(r, metric))}</td>
+                  </Tooltip>
+                ))}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-    </section>
+    </Section>
   );
 }

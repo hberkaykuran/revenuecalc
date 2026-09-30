@@ -2,9 +2,9 @@ export type Product = {
   id: string;
   name: string;
   cost: number; // VAT included
-  price: number; // VAT included list price
-  vatRate: number; // % VAT on this product (sale and purchase)
-  sizeUnits: number; // how many "slots" one unit takes in a box (1 = standard)
+  price: number; // VAT included sale price
+  vatRate: number; // % VAT inside price and cost (only used for the separate VAT figure)
+  sizeUnits: number; // box slots one unit takes (1 = standard)
 };
 
 export type Box = {
@@ -19,7 +19,7 @@ export type TariffRow = {
   from: number;
   to: number;
   prices: number[]; // one per zone, VAT & EPH excluded
-  perDesi: boolean; // price is per desi (e.g. 31+ row)
+  perDesi: boolean;
 };
 
 export type Settings = {
@@ -28,59 +28,60 @@ export type Settings = {
   zones: string[];
   zoneIndex: number;
   tariff: TariffRow[];
-  shippingVatRate: number; // % added on top of tariff
-  ephRate: number; // % added on top of tariff (Evrensel Hizmet Payı)
-  packagingVatRate: number; // VAT contained in packaging cost
-  commissionRate: number; // % of product revenue (after discounts)
-  commissionVatRate: number; // VAT contained in the commission (for VAT settlement)
-  customerShippingFee: number; // VAT included
-  freeShippingThreshold: number; // product revenue after all discounts
-  overflowRemainderBestFit: boolean; // 13 items: false = 2x large, true = large + small
-  deductVat: boolean; // subtract VAT payable (output - input) from profit
+  shippingVatRate: number;
+  ephRate: number;
+  packagingVatRate: number;
+  commissionRate: number;
+  commissionVatRate: number;
+  customerShippingFee: number;
+  freeShippingThreshold: number;
+  overflowRemainderBestFit: boolean;
+  deductVat: boolean; // off by default: VAT is tracked separately
 };
 
-export type UnitDiscount =
-  | { type: 'none' }
-  | { type: 'percent'; value: number }
-  | { type: 'flat'; value: number }
-  | { type: 'fixed'; value: number };
+/**
+ * A campaign is one mechanic with its own numbers. Product mechanics run on
+ * each selected product's line separately; cart mechanics run on the order.
+ */
+export type Mechanic =
+  | { type: 'percentOff'; percent: number; minQty: number }
+  | { type: 'amountOff'; amount: number; minQty: number } // TL off each unit
+  | { type: 'fixedPrice'; price: number; minQty: number } // new unit price
+  | { type: 'buyXPayY'; buy: number; pay: number }
+  | { type: 'bundlePrice'; qty: number; price: number } // X pcs for P TL
+  | { type: 'nthOff'; n: number; percent: number } // every Nth unit X% off
+  | { type: 'qtyTiers'; tiers: { minQty: number; percent: number }[] }
+  | { type: 'cartPercent'; percent: number; minAmount: number }
+  | { type: 'cartAmount'; amount: number; minAmount: number }
+  | { type: 'cartTiers'; mode: 'percent' | 'amount'; tiers: { minAmount: number; value: number }[] }
+  | { type: 'freeShipping'; minAmount: number };
 
-export type VolumeTier = { minQty: number; percent: number };
+export type MechanicType = Mechanic['type'];
 
-export type Bundle =
-  | { type: 'none' }
-  | { type: 'buyXpayY'; buy: number; pay: number }
-  | { type: 'xForPrice'; qty: number; price: number }
-  | { type: 'nthDiscount'; n: number; percent: number } // every n-th unit X% off
-  | { type: 'volume'; tiers: VolumeTier[] }; // whole line X% off from a quantity
+export type Campaign = {
+  id: string;
+  name: string; // empty = generated from the mechanic
+  mechanic: Mechanic;
+  productIds: string[]; // product mechanics only; empty = every product
+  active: boolean;
+};
 
-export type ProductCampaign = {
+/** Pair rules: key "idA|idB" (sorted) -> stacks or not. Missing = default rule. */
+export type StackRules = Record<string, boolean>;
+
+export type Scenario = {
   id: string;
   name: string;
-  unit: UnitDiscount;
-  minQty: number; // unit discount only applies from this quantity
-  bundle: Bundle;
-  productIds?: string[]; // limit to these products; empty/undefined = any product
+  campaigns: Campaign[]; // active campaigns as they were saved
+  stack: StackRules;
 };
-
-export type CartTier = { min: number; type: 'percent' | 'flat' | 'freeShipping'; value: number };
-
-export type CartCampaign = { id: string; name: string; tiers: CartTier[] };
-
-/** Which campaign runs on each product, plus one cart campaign. */
-export type Setup = {
-  productCampaigns: Record<string, string | null>; // productId -> campaignId
-  cartCampaignId: string | null;
-};
-
-export type Scenario = Setup & { id: string; name: string };
 
 export type AppState = {
+  version: 3;
   settings: Settings;
-  productCampaigns: ProductCampaign[];
-  cartCampaigns: CartCampaign[];
-  active: Setup;
+  campaigns: Campaign[];
+  stack: StackRules;
   scenarios: Scenario[];
 };
 
-export type Cart = Record<string, number>; // productId -> qty
+export type Cart = Record<string, number>;

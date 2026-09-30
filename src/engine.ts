@@ -1,47 +1,103 @@
-import type {
-  Box, Bundle, Cart, CartCampaign, Product, ProductCampaign, Settings, Setup, TariffRow, UnitDiscount,
-} from './types';
+import type { Box, Campaign, Cart, Mechanic, MechanicType, Product, Settings, StackRules, TariffRow } from './types';
 
 const EPS = 1e-9;
-const round2 = (n: number) => Math.round(n * 100) / 100;
 
-/** Price of one unit after the per-unit discount. */
-export function unitPriceAfter(price: number, d: UnitDiscount): number {
-  switch (d.type) {
-    case 'percent': return Math.max(0, price * (1 - d.value / 100));
-    case 'flat': return Math.max(0, price - d.value);
-    case 'fixed': return Math.max(0, d.value);
-    default: return price;
+// ---------- mechanics ----------
+
+export const PRODUCT_MECHANICS: MechanicType[] = ['percentOff', 'amountOff', 'fixedPrice', 'buyXPayY', 'bundlePrice', 'nthOff', 'qtyTiers'];
+export const CART_MECHANICS: MechanicType[] = ['cartPercent', 'cartAmount', 'cartTiers', 'freeShipping'];
+const UNIT_MECHANICS: MechanicType[] = ['percentOff', 'amountOff', 'fixedPrice'];
+
+export const isCart = (m: Mechanic | MechanicType) => CART_MECHANICS.includes(typeof m === 'string' ? m : m.type);
+
+export type ParamSpec = { key: string; label: string; unit: '%' | 'TL' | 'pcs'; min: number; step: number };
+
+/** Editable numbers of each mechanic (tiers are edited separately). */
+export const PARAMS: Record<MechanicType, ParamSpec[]> = {
+  percentOff: [{ key: 'percent', label: 'Discount', unit: '%', min: 0, step: 1 }, { key: 'minQty', label: 'From qty', unit: 'pcs', min: 0, step: 1 }],
+  amountOff: [{ key: 'amount', label: 'Off each unit', unit: 'TL', min: 0, step: 5 }, { key: 'minQty', label: 'From qty', unit: 'pcs', min: 0, step: 1 }],
+  fixedPrice: [{ key: 'price', label: 'New unit price', unit: 'TL', min: 0, step: 5 }, { key: 'minQty', label: 'From qty', unit: 'pcs', min: 0, step: 1 }],
+  buyXPayY: [{ key: 'buy', label: 'Buy', unit: 'pcs', min: 1, step: 1 }, { key: 'pay', label: 'Pay', unit: 'pcs', min: 0, step: 1 }],
+  bundlePrice: [{ key: 'qty', label: 'Pieces', unit: 'pcs', min: 1, step: 1 }, { key: 'price', label: 'Bundle price', unit: 'TL', min: 0, step: 10 }],
+  nthOff: [{ key: 'n', label: 'Every Nth unit', unit: 'pcs', min: 1, step: 1 }, { key: 'percent', label: 'Discount', unit: '%', min: 0, step: 5 }],
+  qtyTiers: [],
+  cartPercent: [{ key: 'percent', label: 'Discount', unit: '%', min: 0, step: 1 }, { key: 'minAmount', label: 'Cart over', unit: 'TL', min: 0, step: 50 }],
+  cartAmount: [{ key: 'amount', label: 'Discount', unit: 'TL', min: 0, step: 10 }, { key: 'minAmount', label: 'Cart over', unit: 'TL', min: 0, step: 50 }],
+  cartTiers: [],
+  freeShipping: [{ key: 'minAmount', label: 'Cart over', unit: 'TL', min: 0, step: 50 }],
+};
+
+/** A sensible starting mechanic of a type, sized to the product's price. */
+export function defaultMechanic(type: MechanicType, price = 100): Mechanic {
+  switch (type) {
+    case 'percentOff': return { type, percent: 10, minQty: 0 };
+    case 'amountOff': return { type, amount: Math.max(5, Math.round(price * 0.1 / 5) * 5), minQty: 0 };
+    case 'fixedPrice': return { type, price: shelfPrice(price * 0.85), minQty: 0 };
+    case 'buyXPayY': return { type, buy: 4, pay: 3 };
+    case 'bundlePrice': return { type, qty: 3, price: shelfPrice(price * 3 * 0.88) };
+    case 'nthOff': return { type, n: 2, percent: 50 };
+    case 'qtyTiers': return { type, tiers: [{ minQty: 3, percent: 10 }, { minQty: 6, percent: 15 }] };
+    case 'cartPercent': return { type, percent: 10, minAmount: 1000 };
+    case 'cartAmount': return { type, amount: 100, minAmount: 1000 };
+    case 'cartTiers': return { type, mode: 'amount', tiers: [{ minAmount: 750, value: 50 }, { minAmount: 1000, value: 100 }] };
+    case 'freeShipping': return { type, minAmount: 500 };
   }
 }
 
-/** Total for `qty` units at `unitPrice` with a bundle rule. */
-export function bundleTotal(qty: number, unitPrice: number, b: Bundle): number {
-  if (b.type === 'buyXpayY' && b.buy > 0 && b.pay >= 0 && b.pay < b.buy) {
-    const groups = Math.floor(qty / b.buy);
-    return (qty - groups * (b.buy - b.pay)) * unitPrice;
-  }
-  if (b.type === 'xForPrice' && b.qty > 0) {
-    const groups = Math.floor(qty / b.qty);
-    return groups * b.price + (qty - groups * b.qty) * unitPrice;
-  }
-  if (b.type === 'nthDiscount' && b.n > 0) {
-    return qty * unitPrice - Math.floor(qty / b.n) * unitPrice * Math.min(100, b.percent) / 100;
-  }
-  if (b.type === 'volume') {
-    const tier = [...b.tiers].sort((x, y) => y.minQty - x.minQty).find((t) => qty >= t.minQty);
-    return qty * unitPrice * (1 - Math.min(100, tier?.percent ?? 0) / 100);
-  }
-  return qty * unitPrice;
+/** Round down to a shelf price ending in 9.90 (352 -> 349.90). */
+export function shelfPrice(x: number): number {
+  if (x < 20) return Math.max(0.9, Math.floor(x) - 0.1);
+  return Math.round((Math.floor((x + 0.1) / 10) * 10 - 0.1) * 100) / 100;
 }
 
-export function lineTotal(qty: number, price: number, c: ProductCampaign | null | undefined): number {
-  if (!c || qty <= 0) return qty * price;
-  const unit = qty >= (c.minQty || 0) ? unitPriceAfter(price, c.unit) : price;
-  return bundleTotal(qty, unit, c.bundle);
+function unitPrice(price: number, qty: number, mods: Mechanic[]): number {
+  let u = price;
+  const fixed = mods.filter((m): m is Extract<Mechanic, { type: 'fixedPrice' }> => m.type === 'fixedPrice' && qty >= m.minQty);
+  if (fixed.length) u = Math.min(u, ...fixed.map((m) => m.price));
+  for (const m of mods) if (m.type === 'percentOff' && qty >= m.minQty) u *= 1 - Math.min(100, m.percent) / 100;
+  for (const m of mods) if (m.type === 'amountOff' && qty >= m.minQty) u -= m.amount;
+  return Math.max(0, u);
 }
 
-/** Boxes needed for `slots` product slots. Overflow past the largest box uses more large boxes. */
+/** Line total for `qty` units at unit price `u` under one line mechanic. */
+function lineMechanic(qty: number, u: number, m: Mechanic): number {
+  switch (m.type) {
+    case 'buyXPayY': {
+      if (m.buy <= 0 || m.pay < 0 || m.pay >= m.buy) return qty * u;
+      const g = Math.floor(qty / m.buy);
+      return (qty - g * (m.buy - m.pay)) * u;
+    }
+    case 'bundlePrice': {
+      if (m.qty <= 0) return qty * u;
+      const g = Math.floor(qty / m.qty);
+      return Math.min(qty * u, g * m.price + (qty - g * m.qty) * u);
+    }
+    case 'nthOff':
+      return m.n > 0 ? qty * u - Math.floor(qty / m.n) * u * Math.min(100, m.percent) / 100 : qty * u;
+    case 'qtyTiers': {
+      const t = [...m.tiers].sort((a, b) => b.minQty - a.minQty).find((x) => qty >= x.minQty);
+      return qty * u * (1 - Math.min(100, t?.percent ?? 0) / 100);
+    }
+    default:
+      return qty * u;
+  }
+}
+
+/** Line total with a set of product mechanics. Several line mechanics stack as successive discounts. */
+export function lineTotal(qty: number, price: number, mechs: Mechanic[]): number {
+  if (qty <= 0) return 0;
+  const u = unitPrice(price, qty, mechs.filter((m) => UNIT_MECHANICS.includes(m.type)));
+  let total = qty * u;
+  for (const m of mechs) {
+    if (UNIT_MECHANICS.includes(m.type) || isCart(m)) continue;
+    if (total <= EPS) break;
+    total = lineMechanic(qty, total / qty, m);
+  }
+  return total;
+}
+
+// ---------- boxes & shipping ----------
+
 export function packBoxes(slots: number, boxes: Box[], remainderBestFit = false): Box[] {
   if (slots <= EPS || boxes.length === 0) return [];
   const sorted = [...boxes].sort((a, b) => a.capacity - b.capacity);
@@ -55,7 +111,6 @@ export function packBoxes(slots: number, boxes: Box[], remainderBestFit = false)
   return out;
 }
 
-/** Tariff price (VAT & EPH excluded) for a total desi in a zone. */
 export function tariffPrice(desi: number, tariff: TariffRow[], zone: number): number {
   if (desi <= EPS || tariff.length === 0) return 0;
   const rows = [...tariff].sort((a, b) => a.to - b.to);
@@ -64,110 +119,125 @@ export function tariffPrice(desi: number, tariff: TariffRow[], zone: number): nu
   return row.perDesi ? p * Math.ceil(desi - EPS) : p;
 }
 
-/** Highest discount tier the cart reaches (free-shipping tiers are handled separately). */
-export function bestTier(c: CartCampaign | null | undefined, subtotal: number) {
-  if (!c) return null;
-  const ok = c.tiers.filter((t) => t.type !== 'freeShipping' && subtotal + EPS >= t.min).sort((a, b) => b.min - a.min);
-  return ok[0] ?? null;
+// ---------- combination rules ----------
+
+export const pairKey = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+
+const overlaps = (a: Campaign, b: Campaign) =>
+  !a.productIds.length || !b.productIds.length || a.productIds.some((p) => b.productIds.includes(p));
+
+/** Default: free shipping stacks with everything; product + cart stack; two campaigns on the same product don't; two cart discounts don't. */
+export function defaultStacks(a: Campaign, b: Campaign): boolean {
+  if (a.mechanic.type === 'freeShipping' || b.mechanic.type === 'freeShipping') return true;
+  const ca = isCart(a.mechanic), cb = isCart(b.mechanic);
+  if (ca !== cb) return true;
+  if (ca && cb) return false;
+  return !overlaps(a, b);
 }
 
-export function cartFreeShipping(c: CartCampaign | null | undefined, subtotal: number) {
-  return !!c?.tiers.some((t) => t.type === 'freeShipping' && subtotal + EPS >= t.min);
+export function stacks(rules: StackRules, a: Campaign, b: Campaign): boolean {
+  return rules[pairKey(a.id, b.id)] ?? defaultStacks(a, b);
 }
 
-export function nextTier(c: CartCampaign | null | undefined, subtotal: number) {
-  if (!c) return null;
-  return c.tiers.filter((t) => t.min > subtotal + EPS).sort((a, b) => a.min - b.min)[0] ?? null;
+/** All maximal sets of campaigns that may run together (Bron–Kerbosch). */
+export function combinations(cs: Campaign[], rules: StackRules): Campaign[][] {
+  if (cs.length === 0) return [[]];
+  const ok = (a: Campaign, b: Campaign) => stacks(rules, a, b);
+  const out: Campaign[][] = [];
+  const bk = (r: Campaign[], p: Campaign[], x: Campaign[]) => {
+    if (!p.length && !x.length) { out.push(r); return; }
+    for (const v of [...p]) {
+      bk([...r, v], p.filter((u) => u !== v && ok(u, v)), x.filter((u) => ok(u, v)));
+      p = p.filter((u) => u !== v);
+      x = [...x, v];
+    }
+  };
+  bk([], cs, []);
+  return out;
 }
 
-export function appliesTo(c: ProductCampaign, p: Product) {
-  return !c.productIds?.length || c.productIds.includes(p.id);
-}
+// ---------- order ----------
 
-export type CampaignKind = 'percent' | 'flat' | 'fixed' | 'buyXpayY' | 'xForPrice' | 'nthDiscount' | 'volume' | 'none';
-export const KIND_LABELS: Record<CampaignKind, string> = {
-  percent: '% off', flat: 'TL off', fixed: 'Fixed price', buyXpayY: 'Buy X pay Y',
-  xForPrice: 'Bundle price', nthDiscount: 'Nth unit off', volume: 'Volume', none: 'Other',
-};
-export function campaignKind(c: ProductCampaign): CampaignKind {
-  if (c.bundle.type !== 'none') return c.bundle.type;
-  return c.unit.type;
-}
-
-export type LineResult = {
-  productId: string;
-  name: string;
-  qty: number;
-  list: number;
-  afterCampaign: number;
-  afterCart: number;
-  cogs: number;
-  vatRate: number;
-};
+export type LineResult = { productId: string; name: string; qty: number; list: number; afterCampaign: number; afterCart: number; cogs: number; vatRate: number };
 
 export type OrderResult = {
   qty: number;
   lines: LineResult[];
-  list: number; // qty * list price
+  list: number;
   campaignDiscount: number;
-  subtotal: number; // after product campaigns
+  subtotal: number;
   cartDiscount: number;
-  productRevenue: number; // after all discounts (VAT incl.)
+  productRevenue: number;
   shippingCharged: number;
   freeShipping: boolean;
   customerPays: number;
   commission: number;
   boxes: Box[];
   desi: number;
-  shippingTariff: number; // excl VAT/EPH
-  shippingCost: number; // incl VAT & EPH
-  packaging: number; // box, tape, label… incl VAT
+  shippingTariff: number;
+  shippingCost: number;
+  packaging: number;
   cogs: number;
+  costs: number; // commission + shipping + packaging + goods
   cashProfit: number;
   vatOutput: number;
   vatInput: number;
   vatPayable: number;
   profit: number;
-  margin: number; // profit / customerPays
+  margin: number;
   totalDiscount: number;
-};
-
-export type Lookup = {
-  productCampaigns: ProductCampaign[];
-  cartCampaigns: CartCampaign[];
+  applied: Campaign[]; // campaigns that changed this order
+  skipped: Campaign[]; // active and relevant, but left out by combination rules
 };
 
 const vatPart = (gross: number, rate: number) => (gross * rate) / (100 + rate);
 
-export function calcOrder(settings: Settings, cart: Cart, scenario: Setup | null, lookup: Lookup): OrderResult {
+const covers = (c: Campaign, p: Product) => !c.productIds.length || c.productIds.includes(p.id);
+
+/** Order totals with exactly these campaigns applied (no combination rules). */
+export function calcWith(settings: Settings, cart: Cart, cs: Campaign[]): OrderResult {
   const lines: LineResult[] = [];
+  const touched = new Set<string>();
   for (const p of settings.products) {
     const qty = cart[p.id] ?? 0;
     if (qty <= 0) continue;
-    const cid = scenario?.productCampaigns[p.id] ?? null;
-    const found = cid ? lookup.productCampaigns.find((x) => x.id === cid) : null;
-    const c = found && appliesTo(found, p) ? found : null;
+    const mine = cs.filter((c) => !isCart(c.mechanic) && covers(c, p));
     const list = qty * p.price;
-    const after = lineTotal(qty, p.price, c);
-    lines.push({
-      productId: p.id, name: p.name, qty, list, afterCampaign: after, afterCart: after,
-      cogs: qty * p.cost, vatRate: p.vatRate,
-    });
+    const after = lineTotal(qty, p.price, mine.map((c) => c.mechanic));
+    if (after < list - 0.005) {
+      // record which campaigns actually moved the price
+      for (const c of mine) if (lineTotal(qty, p.price, [c.mechanic]) < list - 0.005) touched.add(c.id);
+    }
+    lines.push({ productId: p.id, name: p.name, qty, list, afterCampaign: after, afterCart: after, cogs: qty * p.cost, vatRate: p.vatRate });
   }
   const qty = lines.reduce((s, l) => s + l.qty, 0);
   const list = lines.reduce((s, l) => s + l.list, 0);
   const subtotal = lines.reduce((s, l) => s + l.afterCampaign, 0);
 
-  const cartCampaign = scenario?.cartCampaignId
-    ? lookup.cartCampaigns.find((x) => x.id === scenario.cartCampaignId) : null;
-  const tier = bestTier(cartCampaign, subtotal);
   let cartDiscount = 0;
-  if (tier) cartDiscount = tier.type === 'percent' ? subtotal * tier.value / 100 : Math.min(tier.value, subtotal);
-  // spread the cart discount over lines proportionally (matters for mixed VAT rates)
+  for (const c of cs) {
+    const m = c.mechanic;
+    let d = 0;
+    if (m.type === 'cartPercent' && subtotal + EPS >= m.minAmount) d = subtotal * m.percent / 100;
+    if (m.type === 'cartAmount' && subtotal + EPS >= m.minAmount) d = m.amount;
+    if (m.type === 'cartTiers') {
+      const t = [...m.tiers].sort((a, b) => b.minAmount - a.minAmount).find((x) => subtotal + EPS >= x.minAmount);
+      if (t) d = m.mode === 'percent' ? subtotal * t.value / 100 : t.value;
+    }
+    if (d > 0) { cartDiscount += d; touched.add(c.id); }
+  }
+  cartDiscount = Math.min(cartDiscount, subtotal);
   for (const l of lines) l.afterCart = subtotal > 0 ? l.afterCampaign * (1 - cartDiscount / subtotal) : 0;
   const productRevenue = subtotal - cartDiscount;
 
-  const freeShipping = productRevenue + EPS >= settings.freeShippingThreshold || cartFreeShipping(cartCampaign, subtotal);
+  const storeFree = productRevenue + EPS >= settings.freeShippingThreshold;
+  let freeShipping = storeFree;
+  for (const c of cs) {
+    if (c.mechanic.type === 'freeShipping' && qty > 0 && productRevenue + EPS >= c.mechanic.minAmount) {
+      freeShipping = true;
+      if (!storeFree) touched.add(c.id);
+    }
+  }
   const shippingCharged = qty > 0 && !freeShipping ? settings.customerShippingFee : 0;
   const customerPays = productRevenue + shippingCharged;
   const commission = productRevenue * settings.commissionRate / 100;
@@ -179,12 +249,11 @@ export function calcOrder(settings: Settings, cart: Cart, scenario: Setup | null
   const shippingNet = shippingTariff * (1 + settings.ephRate / 100);
   const shippingCost = shippingNet * (1 + settings.shippingVatRate / 100);
   const packaging = boxes.reduce((s, b) => s + (b.packagingCost ?? 0), 0);
-
   const cogs = lines.reduce((s, l) => s + l.cogs, 0);
-  const cashProfit = customerPays - commission - shippingCost - packaging - cogs;
+  const costs = commission + shippingCost + packaging + cogs;
+  const cashProfit = customerPays - costs;
 
-  const vatOutput = lines.reduce((s, l) => s + vatPart(l.afterCart, l.vatRate), 0)
-    + vatPart(shippingCharged, settings.shippingVatRate);
+  const vatOutput = lines.reduce((s, l) => s + vatPart(l.afterCart, l.vatRate), 0) + vatPart(shippingCharged, settings.shippingVatRate);
   const vatInput = lines.reduce((s, l) => s + vatPart(l.cogs, l.vatRate), 0)
     + shippingNet * settings.shippingVatRate / 100
     + vatPart(commission, settings.commissionVatRate)
@@ -195,17 +264,42 @@ export function calcOrder(settings: Settings, cart: Cart, scenario: Setup | null
   return {
     qty, lines, list, campaignDiscount: list - subtotal, subtotal, cartDiscount, productRevenue,
     shippingCharged, freeShipping, customerPays, commission, boxes, desi, shippingTariff, shippingCost,
-    packaging, cogs, cashProfit, vatOutput, vatInput, vatPayable, profit,
+    packaging, cogs, costs, cashProfit, vatOutput, vatInput, vatPayable, profit,
     margin: customerPays > 0 ? profit / customerPays : 0,
     totalDiscount: list - productRevenue,
+    applied: cs.filter((c) => touched.has(c.id)),
+    skipped: [],
   };
 }
 
-export function boxLabel(boxes: Box[]): string {
-  if (boxes.length === 0) return '—';
-  const counts = new Map<string, number>();
-  for (const b of boxes) counts.set(b.name, (counts.get(b.name) ?? 0) + 1);
-  return [...counts].map(([n, c]) => (c > 1 ? `${c}× ${n}` : n)).join(' + ');
+/** Campaigns that could matter for this cart. */
+export function relevant(settings: Settings, cart: Cart, cs: Campaign[]) {
+  const inCart = settings.products.filter((p) => (cart[p.id] ?? 0) > 0);
+  return cs.filter((c) => isCart(c.mechanic) || inCart.some((p) => covers(c, p)));
 }
 
-export { round2 };
+/**
+ * Order totals with the active campaigns. When combination rules conflict,
+ * the customer gets the combination that makes their order cheapest,
+ * the way marketplaces apply the best offer.
+ */
+export function calcOrder(settings: Settings, cart: Cart, campaigns: Campaign[], rules: StackRules): OrderResult {
+  const cs = relevant(settings, cart, campaigns.filter((c) => c.active));
+  const combos = combinations(cs, rules);
+  let best: OrderResult | null = null;
+  for (const combo of combos) {
+    const r = calcWith(settings, cart, combo);
+    if (!best || r.customerPays < best.customerPays - 0.005 || (Math.abs(r.customerPays - best.customerPays) < 0.005 && r.profit > best.profit)) best = r;
+  }
+  const r = best!;
+  const appliedIds = new Set(r.applied.map((c) => c.id));
+  // anything that would have changed the order on its own but was left out
+  r.skipped = cs.filter((c) => !appliedIds.has(c.id) && calcWith(settings, cart, [c]).applied.length > 0);
+  return r;
+}
+
+export function boxCounts(boxes: Box[]): [string, number][] {
+  const counts = new Map<string, number>();
+  for (const b of boxes) counts.set(b.name, (counts.get(b.name) ?? 0) + 1);
+  return [...counts];
+}
