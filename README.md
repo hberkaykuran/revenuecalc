@@ -1,6 +1,6 @@
 # Revenue calculator
 
-Profit and margin per order after campaigns, platform commission, shipping (DHL eCommerce tariff, total desi), packaging and VAT. Turkish and English. Everything is editable and saved in the browser; export/import a JSON file to move it.
+Profit and margin per Shopify order after campaigns, payment/platform commission, shipping (DHL eCommerce tariff, total desi), packaging and VAT. Turkish and English. Everything is editable and saved in the browser; export/import a JSON file to move it.
 
 ```sh
 npm install
@@ -9,12 +9,6 @@ npm test                # engine, strategy and translation tests
 npm run build           # static site in dist/
 npm run build:artifact  # single page in dist-artifact/ (React, Ant Design and icons from CDNs)
 ```
-
-## Channels
-
-Shopify and Trendyol each have their own fees, shipping tariff, boxes, prices and campaigns (switch at the top). Costs are shared. A channel shows the products it has a price for.
-
-**Trendyol tariffs**: import the weekly *Komisyon Tarifeleri* .xlsx. For each product you see the margin at today's price and at the top price of each commission band; pick one per product, apply them to the Trendyol prices, or export the same file with the *YENİ TSF* column filled. Every imported week is kept, to see how the band limits move when your price changes.
 
 ## Campaigns
 

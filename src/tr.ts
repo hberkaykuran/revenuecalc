@@ -337,4 +337,5 @@ export const tr: Record<string, string> = {
   "Remove {p} from {channel}?": "{p}, {channel} kanalından kaldırılsın mı?",
   "The customer sees a promotion price now. This price only applies if you leave the promotion.": "Müşteri şu an promosyon fiyatını görüyor. Bu fiyat yalnızca promosyondan çıkarsanız geçerli olur.",
   "without promotion": "promosyon olmadan",
+  "Only for the separate VAT figure; profit does not change": "Yalnızca ayrı gösterilen KDV hesabı için; kârı değiştirmez",
 };

@@ -10,7 +10,6 @@ const libs = [
   'https://cdnjs.cloudflare.com/ajax/libs/dayjs/1.11.13/dayjs.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/antd/6.6.5/antd-with-locales.min.js',
   'https://cdn.jsdelivr.net/npm/@ant-design/icons@6.3.4/dist/index.umd.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
 ];
 const html = `<title>Revenue Calculator</title>
 <style>${css}</style>

@@ -17,12 +17,12 @@ export default defineConfig(({ mode }) => {
       cssCodeSplit: false,
       rollupOptions: {
         input: 'src/main.tsx',
-        external: ['react', 'react-dom', 'react-dom/client', 'antd', '@ant-design/icons', 'dayjs', 'xlsx'],
+        external: ['react', 'react-dom', 'react-dom/client', 'antd', '@ant-design/icons', 'dayjs'],
         output: {
           format: 'iife',
           entryFileNames: 'app.js',
           assetFileNames: 'app[extname]',
-          globals: { react: 'React', 'react-dom': 'ReactDOM', 'react-dom/client': 'ReactDOM', antd: 'antd', '@ant-design/icons': 'icons', dayjs: 'dayjs', xlsx: 'XLSX' },
+          globals: { react: 'React', 'react-dom': 'ReactDOM', 'react-dom/client': 'ReactDOM', antd: 'antd', '@ant-design/icons': 'icons', dayjs: 'dayjs' },
         },
       },
     },

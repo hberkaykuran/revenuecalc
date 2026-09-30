@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { defaultState, defaultStore, trendyolChannel } from './defaults';
+import { defaultState, defaultStore } from './defaults';
 import type { Lang } from './i18n';
 import type { AppState, Campaign, Channel, Mechanic, Store } from './types';
 
@@ -64,8 +64,11 @@ export function migrateV3(raw: any): AppState {
 export function migrate(raw: any): Store {
   if (raw?.version === 4 && Array.isArray(raw.channels)) {
     const d = structuredClone(defaultStore);
-    const channels = (raw.channels as Channel[]).map((c) => ({ ...c, settings: { ...d.channels[0].settings, ...c.settings } }));
-    return { ...d, ...raw, channels };
+    // Shopify only for now: other channels and their products are left out
+    const shop = (raw.channels as Channel[]).find((c) => c.id === 'shopify') ?? d.channels[0];
+    const channels = [{ ...shop, settings: { ...d.channels[0].settings, ...shop.settings }, bands: {} }];
+    const products = (raw.products as Store['products']).filter((p) => shop.prices[p.id] !== undefined);
+    return { ...d, ...raw, products, channels, channelId: 'shopify', tariffHistory: [] };
   }
   if (!raw || typeof raw !== 'object' || !raw.settings) return structuredClone(defaultStore);
   const v3 = migrateV3(raw);
@@ -77,7 +80,6 @@ export function migrate(raw: any): Store {
     products: products.map(({ commissionBands: _b, ...p }) => p),
     channels: [
       { id: 'shopify', name: 'Shopify', settings: fullSettings, prices, bands: {}, campaigns: v3.campaigns, stack: v3.stack, scenarios: v3.scenarios },
-      trendyolChannel(fullSettings, prices),
     ],
     channelId: 'shopify',
     tariffHistory: [],

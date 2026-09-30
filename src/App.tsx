@@ -16,9 +16,8 @@ import { setLang, t } from './i18n';
 import { campaignLabel } from './labels';
 import { fromView, toView, useStore, useUiPrefs } from './store';
 import type { AppState, Campaign, Cart } from './types';
-import { Trendyol } from './components/Trendyol';
 
-type TabId = 'results' | 'order' | 'lab' | 'ideas' | 'trendyol' | 'costs';
+type TabId = 'results' | 'order' | 'lab' | 'ideas' | 'costs';
 const WITH_CAMPAIGNS: TabId[] = ['results', 'order', 'lab'];
 
 function useDarkMode() {
@@ -39,7 +38,7 @@ export function App() {
   const setState = useCallback((f: (s: AppState) => AppState) => setStore((st) => fromView(st, f(toView(st)))), [setStore]);
   const [ui, setUi] = useUiPrefs();
   const [whatIf, setWhatIf] = useState<WhatIfState>({ prices: {} });
-  const [tab, setTab] = useState<TabId>(() => (['results', 'order', 'lab', 'ideas', 'trendyol', 'costs'].includes(location.hash.slice(1)) ? location.hash.slice(1) as TabId : 'results'));
+  const [tab, setTab] = useState<TabId>(() => (['results', 'order', 'lab', 'ideas', 'costs'].includes(location.hash.slice(1)) ? location.hash.slice(1) as TabId : 'results'));
   const [drawer, setDrawer] = useState(false);
   const screens = Grid.useBreakpoint();
   const dark = useDarkMode();
@@ -64,7 +63,7 @@ export function App() {
   const wide = !!screens.lg;
 
   const content = {
-    results: <Results />, order: <OrderView />, lab: <Lab />, ideas: <Ideas />, trendyol: <Trendyol />, costs: <ProductsCosts />,
+    results: <Results />, order: <OrderView />, lab: <Lab />, ideas: <Ideas />, costs: <ProductsCosts />,
   }[tab];
 
   return (
@@ -76,8 +75,6 @@ export function App() {
               <Flex justify="space-between" align="center" wrap gap={8} style={{ width: '100%' }}>
                 <Flex gap={12} align="center" wrap>
                   <Typography.Title level={4} style={{ margin: 0 }}>{t('Revenue calculator')}</Typography.Title>
-                  <Segmented value={store.channelId} onChange={(v) => { setWhatIf({ prices: {} }); setStore((s) => ({ ...s, channelId: v as string })); }}
-                    options={store.channels.map((c) => ({ value: c.id, label: c.name }))} aria-label={t('Sales channel')} />
                 </Flex>
                 <Flex gap={8} align="center">
                   {saveStatus === 'saved'
@@ -97,7 +94,6 @@ export function App() {
                   { key: 'order', label: t('Order calculator') },
                   { key: 'lab', label: t('Campaign lab') },
                   { key: 'ideas', label: t('Ideas') },
-                  { key: 'trendyol', label: t('Trendyol tariffs') },
                   { key: 'costs', label: t('Products & costs') },
                 ]} />
               {showSide && <div style={{ marginBottom: 12 }}><WhatIf /></div>}

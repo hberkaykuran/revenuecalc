@@ -137,37 +137,37 @@ describe('commission bands', () => {
   });
 });
 
-describe('channels', () => {
-  it('migrates a v3 store into Shopify and Trendyol channels', () => {
+describe('store', () => {
+  it('migrates a v3 store into the Shopify channel', () => {
     const s = migrate({ ...defaultState, settings: { ...defaultState.settings, products: [{ id: 'A', name: 'A', cost: 60, price: 140, vatRate: 20, sizeUnits: 1 }] } });
     expect(s.version).toBe(4);
-    expect(s.channels.map((c) => c.id)).toEqual(['shopify', 'trendyol']);
-    expect(s.channels[0].prices.A).toBe(140);
-    expect(toView(s).settings.products[0].cost).toBe(60);
+    expect(s.channels.map((c) => c.id)).toEqual(['shopify']);
+    expect(toView(s).settings.products[0]).toMatchObject({ cost: 60, price: 140 });
   });
-  it('keeps prices per channel and costs shared', () => {
-    let s = migrate(null);
-    s = { ...s, channelId: 'trendyol' };
-    const v = toView(s);
-    s = fromView(s, { ...v, settings: { ...v.settings, products: v.settings.products.map((p) => (p.id === 'A' ? { ...p, price: 149.9, cost: 50 } : p)) } });
-    expect(s.channels[1].prices.A).toBe(149.9);
-    expect(s.channels[0].prices.A).toBe(134.9);
-    expect(toView({ ...s, channelId: 'shopify' }).settings.products[0].cost).toBe(50);
+  it('drops the Trendyol channel and its products from saved data', () => {
+    const base = migrate(null);
+    const saved = {
+      ...base,
+      products: [...base.products, { id: 'T1', name: 'tea', cost: 0, vatRate: 20, sizeUnits: 1 }],
+      channels: [...base.channels, { ...base.channels[0], id: 'trendyol', name: 'Trendyol', prices: { A: 149.9, T1: 199.9 } }],
+      channelId: 'trendyol',
+    };
+    const s = migrate(saved);
+    expect(s.channels.map((c) => c.id)).toEqual(['shopify']);
+    expect(s.products.map((p) => p.id)).toEqual(['A', 'B']);
+    expect(s.channelId).toBe('shopify');
   });
-});
-
-describe('products per channel', () => {
-  it('shows a channel only its own products and removes from one channel at a time', () => {
+  it('reads back its own export unchanged', () => {
     let s = migrate(null);
-    s = { ...s, channels: s.channels.map((c) => (c.id === 'trendyol' ? { ...c, prices: { A: 149.9 } } : c)), channelId: 'trendyol' };
-    expect(toView(s).settings.products.map((p) => p.id)).toEqual(['A']);
     const v = toView(s);
-    s = fromView(s, { ...v, settings: { ...v.settings, products: [] } });
-    expect(s.products.map((p) => p.id)).toEqual(['A', 'B']); // still sold on Shopify
-    expect(s.channels[1].prices.A).toBeUndefined();
-    s = { ...s, channelId: 'shopify' };
-    const v2 = toView(s);
-    s = fromView(s, { ...v2, settings: { ...v2.settings, products: v2.settings.products.filter((p) => p.id !== 'B') } });
+    s = fromView(s, { ...v, campaigns: v.campaigns.map((c, i) => ({ ...c, active: i === 0 })), settings: { ...v.settings, products: v.settings.products.map((p) => ({ ...p, cost: 61 })) } });
+    expect(migrate(JSON.parse(JSON.stringify(s)))).toEqual(s);
+  });
+  it('edits and removes products through the view', () => {
+    let s = migrate(null);
+    const v = toView(s);
+    s = fromView(s, { ...v, settings: { ...v.settings, products: v.settings.products.filter((p) => p.id !== 'B').map((p) => ({ ...p, price: 129.9, cost: 50 })) } });
     expect(s.products.map((p) => p.id)).toEqual(['A']);
+    expect(toView(s).settings.products[0]).toMatchObject({ price: 129.9, cost: 50 });
   });
 });
