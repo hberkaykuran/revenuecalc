@@ -1,3 +1,4 @@
+import { serviceFee, trendyolShipping } from './trendyol';
 import type { Box, Campaign, Cart, CommissionBand, Mechanic, MechanicType, Product, Settings, StackRules, TariffRow } from './types';
 
 const EPS = 1e-9;
@@ -183,11 +184,15 @@ export type OrderResult = {
   boxes: Box[];
   desi: number;
   shippingTariff: number;
+  /** Trendyol price tier the shipment fell in (null = priced by desi, or not Trendyol). */
+  shippingTier: number | null;
   shippingCost: number;
   packaging: number;
   orderFee: number;
   cogs: number;
-  costs: number; // commission + shipping + packaging + goods
+  /** E-commerce withholding kept from the payout (Trendyol); a cost only if the settings say so. */
+  withholding: number;
+  costs: number; // commission + fee + shipping + packaging + goods (+ withholding when counted)
   cashProfit: number;
   vatOutput: number;
   vatInput: number;
@@ -256,27 +261,34 @@ export function calcWith(settings: Settings, cart: Cart, cs: Campaign[]): OrderR
   const slots = settings.products.reduce((s, p) => s + (cart[p.id] ?? 0) * p.sizeUnits, 0);
   const boxes = packBoxes(slots, settings.boxes, settings.overflowRemainderBestFit);
   const desi = boxes.reduce((s, b) => s + b.desi, 0);
-  const shippingTariff = tariffPrice(desi, settings.tariff, settings.zoneIndex);
-  const shippingNet = shippingTariff * (1 + settings.ephRate / 100);
-  const shippingCost = shippingNet * (1 + settings.shippingVatRate / 100);
+  const ty = settings.trendyol;
+  // Trendyol: cargo by price tier or desi (EPH is inside its prices), a service fee per package, withholding
+  const quote = ty ? trendyolShipping(ty, desi, productRevenue) : null;
+  const shippingTariff = quote ? quote.price : tariffPrice(desi, settings.tariff, settings.zoneIndex);
+  const shippingVatRate = ty ? ty.serviceVatRate : settings.shippingVatRate;
+  const shippingNet = ty ? shippingTariff : shippingTariff * (1 + settings.ephRate / 100);
+  const shippingCost = shippingNet * (1 + shippingVatRate / 100);
   const packaging = boxes.reduce((s, b) => s + (b.packagingCost ?? 0), 0);
   const cogs = lines.reduce((s, l) => s + l.cogs, 0);
-  const orderFee = qty > 0 ? settings.orderFee ?? 0 : 0;
-  const costs = commission + orderFee + shippingCost + packaging + cogs;
+  const orderFeeNet = ty ? serviceFee(ty) : 0;
+  const orderFee = qty <= 0 ? 0 : ty ? orderFeeNet * (1 + ty.serviceVatRate / 100) : settings.orderFee ?? 0;
+  const withholding = ty ? lines.reduce((s, l) => s + (l.afterCart - vatPart(l.afterCart, l.vatRate)), 0) * ty.withholdingRate / 100 : 0;
+  const costs = commission + orderFee + shippingCost + packaging + cogs + (ty?.deductWithholding ? withholding : 0);
   const cashProfit = customerPays - costs;
 
-  const vatOutput = lines.reduce((s, l) => s + vatPart(l.afterCart, l.vatRate), 0) + vatPart(shippingCharged, settings.shippingVatRate);
+  const vatOutput = lines.reduce((s, l) => s + vatPart(l.afterCart, l.vatRate), 0) + vatPart(shippingCharged, shippingVatRate);
   const vatInput = lines.reduce((s, l) => s + vatPart(l.cogs, l.vatRate), 0)
-    + shippingNet * settings.shippingVatRate / 100
-    + vatPart(commission + orderFee, settings.commissionVatRate)
+    + shippingNet * shippingVatRate / 100
+    + vatPart(commission, settings.commissionVatRate)
+    + (ty ? orderFeeNet * ty.serviceVatRate / 100 * (qty > 0 ? 1 : 0) : vatPart(orderFee, settings.commissionVatRate))
     + vatPart(packaging, settings.packagingVatRate);
   const vatPayable = vatOutput - vatInput;
   const profit = settings.deductVat ? cashProfit - vatPayable : cashProfit;
 
   return {
     qty, lines, list, campaignDiscount: list - subtotal, subtotal, cartDiscount, productRevenue,
-    shippingCharged, freeShipping, customerPays, commission, boxes, desi, shippingTariff, shippingCost,
-    packaging, orderFee, cogs, costs, cashProfit, vatOutput, vatInput, vatPayable, profit,
+    shippingCharged, freeShipping, customerPays, commission, boxes, desi, shippingTariff, shippingTier: quote?.tier ?? null, shippingCost,
+    packaging, orderFee, cogs, withholding, costs, cashProfit, vatOutput, vatInput, vatPayable, profit,
     margin: customerPays > 0 ? profit / customerPays : 0,
     totalDiscount: list - productRevenue,
     applied: cs.filter((c) => touched.has(c.id)),

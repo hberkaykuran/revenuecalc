@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { PARAMS } from './engine';
 import { TYPE_LABELS } from './labels';
 import { tr } from './tr';
+import { ASSUMPTIONS } from './trendyol';
 
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap((f) => {
@@ -20,6 +21,7 @@ describe('Turkish translation', () => {
       for (const m of s.matchAll(/\bt\(\s*(['"])((?:\\.|(?!\1).)*)\1/g)) keys.add(m[2].replace(/\\'/g, "'"));
     }
     for (const v of Object.values(TYPE_LABELS)) keys.add(v);
+    for (const a of ASSUMPTIONS) keys.add(a.text);
     for (const ps of Object.values(PARAMS)) for (const p of ps) keys.add(p.label);
     const ideas = readFileSync('src/components/Ideas.tsx', 'utf8');
     for (const m of ideas.matchAll(/(?:title|aim|why): '((?:\\.|[^'])+)'/g)) keys.add(m[1].replace(/\\'/g, "'"));

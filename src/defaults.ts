@@ -1,3 +1,4 @@
+import { defaultTrendyolCosts } from './trendyol';
 import type { AppState, Store } from './types';
 
 const zones = ['Şehir içi', 'Yakın', 'Kısa', 'Orta', 'Uzak'];
@@ -56,5 +57,39 @@ export const defaultStore: Store = {
     },
   ],
   channelId: 'shopify',
+  tariffHistory: [],
+};
+
+export const TRENDYOL = 'trendyol';
+
+/**
+ * Trendyol starts on its own, with nothing shared with Shopify: the seller pays
+ * shipping, the tariff file sets commission per product (19% until one is
+ * imported), and cargo, service fee and withholding follow Trendyol's rules.
+ */
+export const defaultTrendyolStore: Store = {
+  version: 4,
+  products: [
+    { id: 'ty1', name: 'A', cost: 55, vatRate: 20, sizeUnits: 1 },
+    { id: 'ty2', name: 'B', cost: 115, vatRate: 20, sizeUnits: 1 },
+  ],
+  channels: [
+    {
+      id: TRENDYOL, name: 'Trendyol',
+      settings: {
+        ...shopifySettings,
+        zones: [], zoneIndex: 0, tariff: [],
+        ephRate: 0,
+        commissionRate: 19,
+        customerShippingFee: 0,
+        freeShippingThreshold: 0,
+        orderFee: 0,
+        trendyol: defaultTrendyolCosts(),
+      },
+      prices: { ty1: 149.9, ty2: 349.9 }, bands: {},
+      campaigns: [], stack: {}, scenarios: [],
+    },
+  ],
+  channelId: TRENDYOL,
   tariffHistory: [],
 };

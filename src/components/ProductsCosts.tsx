@@ -1,15 +1,15 @@
 import { DeleteOutlined, DownloadOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons';
-import { Alert, Button, Card, Checkbox, Col, Flex, Input, Popconfirm, Row, Select, Space, Table, Typography, Upload } from 'antd';
+import { Alert, Button, Card, Checkbox, Col, Flex, Input, Popconfirm, Row, Select, Space, Table, Tooltip, Typography, Upload } from 'antd';
 import { useState } from 'react';
 import { useApp } from '../context';
-import { defaultStore } from '../defaults';
-import { pct, t, uid } from '../i18n';
-import { migrate } from '../store';
+import { pct, pctOf, t, uid } from '../i18n';
 import type { Box, Product, Settings, TariffRow } from '../types';
 import { Num } from './common';
+import { TrendyolCosts } from './TrendyolCosts';
 
 export function ProductsCosts() {
-  const { state, setState } = useApp();
+  const { state, setState, channel } = useApp();
+  const isTy = channel === 'trendyol';
   const s = state.settings;
   const set = (patch: Partial<Settings>) => setState((st) => ({ ...st, settings: { ...st.settings, ...patch } }));
   const setProduct = (id: string, patch: Partial<Product>) => set({ products: s.products.map((p) => (p.id === id ? { ...p, ...patch } : p)) });
@@ -23,6 +23,12 @@ export function ProductsCosts() {
         <Table size="small" rowKey="id" pagination={false} dataSource={s.products} scroll={{ x: 'max-content' }}
           columns={[
             { key: 'name', title: t('Name'), render: (_, p) => <Input id={`p-name-${p.id}`} value={p.name} onChange={(e) => setProduct(p.id, { name: e.target.value })} style={{ width: 160 }} /> },
+            ...(isTy ? [
+              { key: 'bc', title: t('Barcode'), render: (_: unknown, p: Product) => <Input id={`p-bc-${p.id}`} value={p.barcode ?? ''} onChange={(e) => setProduct(p.id, { barcode: e.target.value.trim() || undefined })} style={{ width: 140 }} /> },
+              { key: 'cm', title: t('Commission'), render: (_: unknown, p: Product) => (p.commissionBands?.length
+                ? <Tooltip title={p.commissionBands.map((b) => `${b.min ?? '…'} – ${b.max ?? '…'} TL: ${pctOf(b.rate, 1)}`).join(' · ')}><span className="dotted">{t('{n} price bands', { n: p.commissionBands.length })}</span></Tooltip>
+                : <Tooltip title={t('No tariff imported for this product yet; the default commission in Trendyol costs is used.')}><span className="dotted">{pctOf(s.commissionRate, 1)}</span></Tooltip>) },
+            ] : []),
             { key: 'price', title: t('Sale price'), render: (_, p) => <Num id={`p-price-${p.id}`} value={p.price} min={0} step={5} suffix="TL" onChange={(v) => setProduct(p.id, { price: v })} /> },
             { key: 'cost', title: t('Cost'), render: (_, p) => <Num id={`p-cost-${p.id}`} value={p.cost} min={0} step={5} suffix="TL" onChange={(v) => setProduct(p.id, { cost: v })} /> },
             { key: 'gm', title: t('Gross margin'), align: 'right', render: (_, p) => (p.price > 0 ? pct((p.price - p.cost) / p.price) : '—') },
@@ -53,6 +59,7 @@ export function ProductsCosts() {
             </Checkbox>
           </Card>
         </Col>
+        {!isTy && (
         <Col xs={24} xl={12}>
           <Card size="small" title={t('Fees and VAT')}>
             <Row gutter={[12, 12]}>
@@ -78,8 +85,11 @@ export function ProductsCosts() {
             </Checkbox>
           </Card>
         </Col>
+        )}
       </Row>
+      {isTy && <TrendyolCosts />}
 
+      {!isTy && (
       <Card size="small" title={t('Shipping tariff')} extra={
         <Space>{t('Zone')}<Select size="small" value={s.zoneIndex} onChange={(v) => set({ zoneIndex: v })} options={s.zones.map((z, i) => ({ value: i, label: z }))} style={{ width: 120 }} /></Space>
       }>
@@ -99,6 +109,7 @@ export function ProductsCosts() {
           <Button size="small" onClick={() => { const p = s.tariff.map((r) => r.prices[s.zoneIndex] ?? 0); set({ tariff: s.tariff.map((r, i) => ({ ...r, prices: s.zones.map(() => p[i]) })) }); }}>{t("Copy this zone's prices to all zones")}</Button>
         </Space>
       </Card>
+      )}
 
       <DataCard />
     </Flex>
@@ -123,19 +134,19 @@ async function saveJson(filename: string, data: Blob): Promise<'saved' | 'declin
 }
 
 function DataCard() {
-  const { store, setStore } = useApp();
+  const { store, setStore, readSaved, defaults, channel } = useApp();
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [text, setText] = useState('');
   const load = (raw: string) => {
     try {
-      const parsed = JSON.parse(raw);
-      if (!parsed?.settings && !Array.isArray(parsed?.channels)) throw new Error('bad');
-      setStore(() => migrate(parsed));
+      const next = readSaved(JSON.parse(raw));
+      if (!next) throw new Error('bad');
+      setStore(() => next);
       setMsg({ type: 'success', text: t('Loaded.') });
-    } catch { setMsg({ type: 'error', text: t('That is not saved calculator data. Use a file or text made with Export.') }); }
+    } catch { setMsg({ type: 'error', text: channel === 'trendyol' ? t('That is not saved Trendyol data. Use a file or text made with Export on the Trendyol side.') : t('That is not saved calculator data. Use a file or text made with Export.') }); }
   };
   const exportFile = async () => {
-    const res = await saveJson(`revenuecalc-${new Date().toISOString().slice(0, 10)}.json`, new Blob([JSON.stringify(store, null, 2)], { type: 'application/json' }));
+    const res = await saveJson(`revenuecalc-${channel === 'trendyol' ? 'trendyol-' : ''}${new Date().toISOString().slice(0, 10)}.json`, new Blob([JSON.stringify(store, null, 2)], { type: 'application/json' }));
     setMsg(res === 'saved' ? { type: 'success', text: t('Exported.') } : { type: 'error', text: t('The download was not saved.') });
   };
   return (
@@ -151,7 +162,7 @@ function DataCard() {
           setText(json);
           try { await navigator.clipboard.writeText(json); setMsg({ type: 'success', text: t('Copied to clipboard.') }); } catch { setMsg({ type: 'success', text: t('Select the text below and copy it.') }); }
         }}>{t('Copy as text')}</Button>
-        <Popconfirm title={t('Replace everything with the defaults?')} okText={t('Reset')} cancelText={t('Cancel')} onConfirm={() => { setStore(() => structuredClone(defaultStore)); setMsg({ type: 'success', text: t('Reset.') }); }}>
+        <Popconfirm title={t('Replace everything with the defaults?')} okText={t('Reset')} cancelText={t('Cancel')} onConfirm={() => { setStore(() => structuredClone(defaults)); setMsg({ type: 'success', text: t('Reset.') }); }}>
           <Button danger>{t('Reset to defaults')}</Button>
         </Popconfirm>
       </Space>

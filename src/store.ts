@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { defaultState, defaultStore } from './defaults';
+import { defaultState, defaultStore, defaultTrendyolStore, TRENDYOL } from './defaults';
 import type { Lang } from './i18n';
 import type { AppState, Campaign, Channel, Mechanic, Store } from './types';
 
 const KEY = 'revenuecalc:v1';
+const TRENDYOL_KEY = 'revenuecalc:trendyol';
 const UI_KEY = 'revenuecalc:ui';
 
 function read(key: string): unknown {
@@ -66,7 +67,8 @@ export function migrate(raw: any): Store {
     const d = structuredClone(defaultStore);
     // Shopify only for now: other channels and their products are left out
     const shop = (raw.channels as Channel[]).find((c) => c.id === 'shopify') ?? d.channels[0];
-    const channels = [{ ...shop, settings: { ...d.channels[0].settings, ...shop.settings }, bands: {} }];
+    const { trendyol: _t, ...settings } = { ...d.channels[0].settings, ...shop.settings };
+    const channels = [{ ...shop, settings, bands: {} }];
     const products = (raw.products as Store['products']).filter((p) => shop.prices[p.id] !== undefined);
     return { ...d, ...raw, products, channels, channelId: 'shopify', tariffHistory: [] };
   }
@@ -83,6 +85,30 @@ export function migrate(raw: any): Store {
     ],
     channelId: 'shopify',
     tariffHistory: [],
+  };
+}
+
+/**
+ * Saved Trendyol data as a store of its own. Also takes the Trendyol channel
+ * out of data saved by the earlier version that kept both channels together.
+ */
+export function migrateTrendyol(raw: any): Store | null {
+  const ch = raw?.version === 4 && Array.isArray(raw.channels) ? (raw.channels as Channel[]).find((c) => c.id === TRENDYOL) : undefined;
+  if (!ch) return null;
+  const d = structuredClone(defaultTrendyolStore);
+  const dc = d.channels[0];
+  const settings = { ...dc.settings, ...ch.settings, trendyol: { ...dc.settings.trendyol!, ...ch.settings.trendyol } };
+  if (!ch.settings.trendyol) {
+    // the earlier version used Shopify's shipping settings here; start from Trendyol's rules instead
+    Object.assign(settings, { zones: [], zoneIndex: 0, tariff: [], ephRate: 0, customerShippingFee: 0, freeShippingThreshold: 0, orderFee: 0 });
+  }
+  const products = ((raw.products ?? []) as Store['products']).filter((p) => ch.prices[p.id] !== undefined);
+  return {
+    version: 4,
+    products: products.length ? products : d.products,
+    channels: [{ ...dc, ...ch, settings, bands: ch.bands ?? {}, campaigns: ch.campaigns ?? [], stack: ch.stack ?? {}, scenarios: ch.scenarios ?? [] }],
+    channelId: TRENDYOL,
+    tariffHistory: Array.isArray(raw.tariffHistory) ? raw.tariffHistory : [],
   };
 }
 
@@ -126,6 +152,14 @@ export function useStore() {
   return [store, setStore, status] as const;
 }
 
+/** Trendyol's data, saved apart from Shopify's. */
+export function useTrendyolStore() {
+  const [store, setStore] = useState<Store>(() => migrateTrendyol(read(TRENDYOL_KEY)) ?? migrateTrendyol(read(KEY)) ?? structuredClone(defaultTrendyolStore));
+  const [status, setStatus] = useState<SaveStatus>('saved');
+  useEffect(() => { setStatus(write(TRENDYOL_KEY, store) ? 'saved' : 'unavailable'); }, [store]);
+  return [store, setStore, status] as const;
+}
+
 /** Per-browser view preferences: language, collapsed panels, hidden columns. */
 export type UiPrefs = {
   lang: Lang;
@@ -135,6 +169,8 @@ export type UiPrefs = {
   sidebar: boolean;
   nav?: boolean; // left navigation collapsed
   compare?: string[]; // what the Compare tab shows
+  channel?: 'shopify' | 'trendyol';
+  trendyol?: Partial<Pick<UiPrefs, 'compare'>>; // Trendyol's own picks
 };
 
 const defaultUi = (): UiPrefs => ({

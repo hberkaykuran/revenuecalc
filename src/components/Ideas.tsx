@@ -25,7 +25,9 @@ const GOALS: { id: Goal; title: string; aim: string; why: string }[] = [
 type SortBy = 'breakEven' | 'expected' | 'profit';
 
 export function Ideas() {
-  const { settings, setState, label } = useApp();
+  const { settings, setState, label, channel } = useApp();
+  // on Trendyol the customer never pays shipping, so there is no free-shipping threshold to reach
+  const goals = channel === 'trendyol' ? GOALS.filter((g) => g.id !== 'freeShipping') : GOALS;
   const ps = settings.products;
   const [inp, setInp] = useState<StrategyInput>({
     goal: 'basket', productId: ps[0]?.id ?? '', otherProductId: ps[1]?.id ?? ps[0]?.id ?? '',
@@ -77,7 +79,7 @@ export function Ideas() {
       <Section id="goal" title={t('1. What are you aiming for?')}>
         <Radio.Group value={inp.goal} onChange={(e) => set({ goal: e.target.value })} style={{ width: '100%' }}>
           <Row gutter={[12, 12]}>
-            {GOALS.map((g) => (
+            {goals.map((g) => (
               <Col key={g.id} xs={24} md={12} xl={6}>
                 <Card size="small" hoverable className={inp.goal === g.id ? 'goal on' : 'goal'} onClick={() => set({ goal: g.id })}>
                   <Radio value={g.id}><b>{t(g.title)}</b></Radio>

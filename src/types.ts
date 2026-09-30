@@ -44,6 +44,43 @@ export type Settings = {
   freeShippingThreshold: number;
   overflowRemainderBestFit: boolean;
   deductVat: boolean; // off by default: VAT is tracked separately
+  /** Trendyol's cost rules. When set, they replace the tariff, EPH and fee per order above. */
+  trendyol?: TrendyolCosts;
+};
+
+/** One carrier's prices on Trendyol's list, VAT excluded. */
+export type CarrierRates = {
+  id: string;
+  name: string;
+  /** Price by desi: index 0 = 0 desi, 1 = 1 desi, … (desi is rounded up). */
+  desi: number[];
+  /** Added per desi above the last row. */
+  perDesiAbove: number;
+  /** Price-tier (barem) prices, one per tier: when orders meet the fast-shipping terms, and otherwise. */
+  baremFast: number[];
+  baremStandard: number[];
+};
+
+export type TrendyolCosts = {
+  carrierId: string;
+  carriers: CarrierRates[];
+  /** Order totals below each limit ship at that tier's price (e.g. [200, 350]). */
+  baremLimits: number[];
+  /** Tiers only apply up to this desi. */
+  baremMaxDesi: number;
+  /** Orders meet 1-day handover, Hızlı Teslimat or Bugün Kargoda, so the lower tier prices apply. */
+  fastShipping: boolean;
+  /** Platform service fee per package, VAT excluded. */
+  serviceFee: number;
+  /** Lower fee for packages with the Bugün Kargoda label shipped the same day, VAT excluded. */
+  serviceFeeSameDay: number;
+  sameDay: boolean;
+  /** VAT Trendyol adds to shipping and the service fee. */
+  serviceVatRate: number;
+  /** E-commerce withholding (stopaj) on the VAT-excluded sale. */
+  withholdingRate: number;
+  /** Count withholding as a cost. Off: shown separately, since it is credited against income or corporate tax. */
+  deductWithholding: boolean;
 };
 
 /**

@@ -4,11 +4,13 @@ import { useApp } from '../context';
 import { packBoxes } from '../engine';
 import { pct, pctOf, t, tl } from '../i18n';
 import type { Cart } from '../types';
+import { carrierOf } from '../trendyol';
 import { Num } from './common';
 import { boxText } from './Results';
 
 export function OrderView() {
-  const { settings, calc, label } = useApp();
+  const { settings, calc, label, channel } = useApp();
+  const ty = channel === 'trendyol' ? settings.trendyol : undefined;
   const [cart, setCart] = useState<Cart>(() => ({ [settings.products[0]?.id]: 4, [settings.products[1]?.id]: 2 }));
   const r = calc(cart);
   const slots = settings.products.reduce((s, p) => s + (cart[p.id] ?? 0) * p.sizeUnits, 0);
@@ -17,9 +19,15 @@ export function OrderView() {
 
   const hints: { type: 'success' | 'warning' | 'error' | 'info'; text: string }[] = [];
   if (r.qty > 0) {
-    hints.push(r.freeShipping
-      ? { type: 'info', text: t('Free shipping applies, so you pay the whole shipping cost.') }
-      : { type: 'warning', text: t('{x} TL more and shipping is free for the customer.', { x: tl(settings.freeShippingThreshold - r.productRevenue) }) });
+    if (ty) {
+      hints.push(r.shippingTier !== null
+        ? { type: 'info', text: t('Cargo at the price-tier rate for orders under {x} TL.', { x: tl(ty.baremLimits[r.shippingTier]) }) }
+        : { type: 'info', text: t('Cargo by desi: the order is over the last price tier or over {d} desi.', { d: ty.baremMaxDesi }) });
+    } else {
+      hints.push(r.freeShipping
+        ? { type: 'info', text: t('Free shipping applies, so you pay the whole shipping cost.') }
+        : { type: 'warning', text: t('{x} TL more and shipping is free for the customer.', { x: tl(settings.freeShippingThreshold - r.productRevenue) }) });
+    }
     hints.push(room >= 1
       ? { type: 'success', text: t('Room for {n} more in the same box.', { n: room }) }
       : { type: 'warning', text: t('The box is full. One more unit ships as {b}.', { b: boxText({ ...r, boxes: next }) }) });
@@ -46,7 +54,9 @@ export function OrderView() {
                 </Space.Compact>
               </Flex>
             ))}
-            <Space wrap><Tag>{boxText(r)}</Tag><Typography.Text type="secondary">{r.desi} desi · {t('tariff')} {tl(r.shippingTariff)} TL + EPH + {t('VAT')}</Typography.Text></Space>
+            <Space wrap><Tag>{boxText(r)}</Tag><Typography.Text type="secondary">{ty
+              ? <>{r.desi} desi · {carrierOf(ty).name} · {r.shippingTier !== null ? t('tier {n}', { n: r.shippingTier + 1 }) : t('by desi')} {tl(r.shippingTariff)} TL + {t('VAT')}</>
+              : <>{r.desi} desi · {t('tariff')} {tl(r.shippingTariff)} TL + EPH + {t('VAT')}</>}</Typography.Text></Space>
             {hints.map((h, i) => <Alert key={i} type={h.type} message={h.text} showIcon />)}
             {(r.applied.length > 0 || r.skipped.length > 0) && (
               <div>
@@ -69,12 +79,14 @@ export function OrderView() {
               ...r.lines.map((l) => ({ key: l.productId, label: `${l.qty} × ${l.name}`, children: <Flex justify="space-between"><Typography.Text type="secondary">{l.list !== l.afterCampaign ? `${t('list')} ${tl(l.list)}` : ''}</Typography.Text>{money(l.afterCampaign)}</Flex> })),
               ...(r.cartDiscount > 0 ? [{ key: 'cd', label: t('Cart discount'), children: <Flex justify="end">{money(r.cartDiscount, true)}</Flex> }] : []),
               { key: 'pr', label: <b>{t('Product revenue')}</b>, children: <Flex justify="end"><b>{tl(r.productRevenue)}</b></Flex> },
-              { key: 'sh', label: t('Shipping fee from customer'), children: <Flex justify="end">{r.freeShipping ? <Tag color="green">{t('free')}</Tag> : money(r.shippingCharged)}</Flex> },
+              ...(ty ? [] : [{ key: 'sh', label: t('Shipping fee from customer'), children: <Flex justify="end">{r.freeShipping ? <Tag color="green">{t('free')}</Tag> : money(r.shippingCharged)}</Flex> }]),
               { key: 'cp', label: <b>{t('Customer pays')}</b>, children: <Flex justify="end"><b>{tl(r.customerPays)}</b></Flex> },
-              { key: 'cm', label: t('Platform commission {p}', { p: pctOf(settings.commissionRate, 1) }), children: <Flex justify="end">{money(r.commission, true)}</Flex> },
+              { key: 'cm', label: t('Platform commission {p}', { p: ty ? [...new Set(r.lines.map((l) => pctOf(l.commissionRate, 1)))].join(' / ') : pctOf(settings.commissionRate, 1) }), children: <Flex justify="end">{money(r.commission, true)}</Flex> },
+              ...(ty ? [{ key: 'fee', label: t('Service fee'), children: <Flex justify="end">{money(r.orderFee, true)}</Flex> }] : []),
               { key: 'sc', label: `${t('Shipping cost')} · ${r.desi} desi`, children: <Flex justify="end">{money(r.shippingCost, true)}</Flex> },
               { key: 'pk', label: t('Packaging'), children: <Flex justify="end">{money(r.packaging, true)}</Flex> },
               { key: 'cg', label: t('Cost of goods'), children: <Flex justify="end">{money(r.cogs, true)}</Flex> },
+              ...(ty ? [{ key: 'wh', label: ty.deductWithholding ? t('Withholding (stopaj)') : `${t('Withholding (stopaj)')} · ${t('not counted')}`, children: <Flex justify="end">{ty.deductWithholding ? money(r.withholding, true) : <Typography.Text type="secondary">{tl(r.withholding)}</Typography.Text>}</Flex> }] : []),
               { key: 'pf', label: <b>{t('Profit')}</b>, children: <Flex justify="end" gap={8} align="baseline"><Typography.Text type="secondary">{pct(r.margin)} · {r.qty ? `${tl(r.profit / r.qty)} ${t('per unit')}` : ''}</Typography.Text><Typography.Title level={4} style={{ margin: 0 }} type={r.profit < 0 ? 'danger' : undefined}>{tl(r.profit)} TL</Typography.Title></Flex> },
             ]} />
           <Collapse size="small" style={{ marginTop: 12 }} items={[{

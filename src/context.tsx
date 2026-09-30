@@ -5,7 +5,11 @@ import type { AppState, Campaign, Cart, Settings, Store } from './types';
 
 export type WhatIf = { prices: Record<string, number | undefined> };
 
+export type ChannelId = 'shopify' | 'trendyol';
+
 export type AppCtx = {
+  /** Which part of the app this is. Shopify and Trendyol each have their own store. */
+  channel: ChannelId;
   store: Store;
   setStore: (f: (s: Store) => Store) => void;
   state: AppState; // the active channel
@@ -22,6 +26,9 @@ export type AppCtx = {
   /** The same order with saved prices, to compare with a what-if. */
   calcBase: (cart: Cart) => OrderResult;
   label: (c: Campaign) => string;
+  /** Read saved or exported data for this channel; null if it is not this channel's data. */
+  readSaved: (raw: unknown) => Store | null;
+  defaults: Store;
 };
 
 export const Ctx = createContext<AppCtx | null>(null);
